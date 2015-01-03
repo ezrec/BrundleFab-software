@@ -85,7 +85,7 @@ void emit_toolmask(FILE *out, uint16_t *toolmask, int toolbits, int line, int wi
     uint8_t buff[toolbytes];
 
     fprintf(out, "G0 X0 Y%f ; Line %d\n", (line / toolbits) * MM_PER_ROW, line);
-    fprintf(out, "T1 P%f S%d ; Pattern\n", width * mm_per_col, toolbytes);
+    fprintf(out, "T1 P%f Q%f S%d ; Pattern\n", MM_PER_ROW, width * mm_per_col, toolbytes);
     for (i = len = 0; i < width; i++) {
         if (toolbits > 8)
             buff[len++] = (toolmask[i] >> 8) & 0xff;

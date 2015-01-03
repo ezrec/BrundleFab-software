@@ -23,9 +23,9 @@ T0 ; Select no tool
 G90 ; Relative positioning
 G0 Z1 ; Drop the build layer
 G91 ; Absolute positioning
-T2 ; Select heat lamp tool
+T20 ; Select heat lamp tool
 G0 X0 Y0 ; Dry the layer
-T2 ; Select no tool
+T0 ; Select no tool
 G0 X-150 Y0 ; Move to feed start
 G90 ; Relative positioning
 G0 E1 ; Extrude a feed layer
