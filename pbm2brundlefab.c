@@ -36,6 +36,7 @@ void emit_pbm(FILE *out, uint8_t *pbm, int line, int width)
     fprintf(out, "\n");
 }
 
+#if 0
 uint8_t base64_of(int var)
 {
     var &= 0x3f;
@@ -77,13 +78,12 @@ void base64_emit(FILE *out, const uint8_t *byte, int bytes)
 
     fprintf(out, "\n");
 }
+#endif
 
 void emit_toolmask(FILE *out, uint16_t *toolmask, int toolbits, int line, int width)
 {
-    int toolbytes = width * ((toolbits + 7) / 8);
-    int i, len, origin;
+    int i, origin;
     float mm_per_col = MM_PER_ROW / toolbits;
-    uint8_t buff[toolbytes];
 
     for (i = 0; i < width; i++)
         if (toolmask[i])
@@ -93,28 +93,17 @@ void emit_toolmask(FILE *out, uint16_t *toolmask, int toolbits, int line, int wi
     if (i == width)
         return;
 
-    toolmask += i;
     origin = i;
-    width -= i;
-
-    for (i = width-1; i > 0; i--) {
-        if (toolmask[i])
-            break;
-    }
-
-    width = i+1;
 
     fprintf(out, "G1 X%f Y%f ; Line %d\n", (line / toolbits) * MM_PER_ROW, origin * mm_per_col, line);
-    fprintf(out, "T1 P%f Q%f S%d ; Pattern\n", MM_PER_ROW, width * mm_per_col, toolbytes);
-    for (i = len = 0; i < width; i++) {
-        if (toolbits > 8)
-            buff[len++] = (toolmask[i] >> 8) & 0xff;
-        buff[len++] = toolmask[i] & 0xff;
+    for (i = origin + 1; i < width; i++) {
+        if (toolmask[origin] != toolmask[i] || (i == width-1)) {
+            /* Select pattern, and print */
+            fprintf(stdout, "T1 P%d ; Pattern %03X\n", toolmask[origin], toolmask[origin]);
+            fprintf(stdout, "G1 Y%f F%f ; Spray pattern\n",  (origin + i - 1) * mm_per_col, SPRAY_RATE);
+            origin = i;
+        }
     }
-    fprintf(out, "; ");
-    base64_emit(out, buff, len);
-    fprintf(out, "\n");
-    fprintf(out, "G1 Y%f F%f ; Spray pattern\n", (origin + width) * mm_per_col, SPRAY_RATE);
 }
 
 int main(int argc, char **argv)
