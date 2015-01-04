@@ -23,6 +23,7 @@
 #include <string.h>
 
 #define MM_PER_ROW     3.15f
+#define SPRAY_RATE     30000.0f         /* mm/minute */
             
 void emit_pbm(FILE *out, uint8_t *pbm, int line, int width)
 {
@@ -80,20 +81,40 @@ void base64_emit(FILE *out, const uint8_t *byte, int bytes)
 void emit_toolmask(FILE *out, uint16_t *toolmask, int toolbits, int line, int width)
 {
     int toolbytes = width * ((toolbits + 7) / 8);
-    int i, len;
+    int i, len, origin;
     float mm_per_col = MM_PER_ROW / toolbits;
     uint8_t buff[toolbytes];
 
-    fprintf(out, "G0 X0 Y%f ; Line %d\n", (line / toolbits) * MM_PER_ROW, line);
+    for (i = 0; i < width; i++)
+        if (toolmask[i])
+            break;
+
+    /* Don't print blank lines */
+    if (i == width)
+        return;
+
+    toolmask += i;
+    origin = i;
+    width -= i;
+
+    for (i = width-1; i > 0; i--) {
+        if (toolmask[i])
+            break;
+    }
+
+    width = i+1;
+
+    fprintf(out, "G1 X%f Y%f ; Line %d\n", (line / toolbits) * MM_PER_ROW, origin * mm_per_col, line);
     fprintf(out, "T1 P%f Q%f S%d ; Pattern\n", MM_PER_ROW, width * mm_per_col, toolbytes);
     for (i = len = 0; i < width; i++) {
         if (toolbits > 8)
             buff[len++] = (toolmask[i] >> 8) & 0xff;
         buff[len++] = toolmask[i] & 0xff;
     }
+    fprintf(out, "; ");
     base64_emit(out, buff, len);
     fprintf(out, "\n");
-    fprintf(out, "G0 X%f ; Spray pattern\n", width * mm_per_col);
+    fprintf(out, "G1 Y%f F%f ; Spray pattern\n", (origin + width) * mm_per_col, SPRAY_RATE);
 }
 
 int main(int argc, char **argv)
@@ -116,7 +137,6 @@ int main(int argc, char **argv)
 
     stride = (x + 7) / 8;
     pbm = malloc(stride);
-fprintf(stderr, "Stride = %d\n", stride);
     toolmask = malloc(sizeof(toolmask[0]) * x);
 
     /* Convert bitstream into toolmask */
