@@ -14,8 +14,8 @@ fi
 
 cat <<EOF
 ; Print ${SVG_DIR} to the BrundleFab
-G28 ; Home all axes
-G91 ; Absolute positioning
+G28 X0 Y0 Z0 E0 ; Home all axes
+G90 ; Absolute positioning
 M226 ; Wait for manual fill operation
 G92 ; Reset zeros after fill operation
 EOF
