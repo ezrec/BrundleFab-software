@@ -23,7 +23,6 @@
 #include <string.h>
 
 #define MM_PER_ROW     3.15f
-#define SPRAY_RATE     30000.0f         /* mm/minute */
             
 void emit_pbm(FILE *out, uint8_t *pbm, int line, int width)
 {
@@ -95,12 +94,12 @@ void emit_toolmask(FILE *out, uint16_t *toolmask, int toolbits, int line, int wi
 
     origin = i;
 
-    fprintf(out, "G1 X%f Y%f ; Line %d\n", (line / toolbits) * MM_PER_ROW, origin * mm_per_col, line);
+    fprintf(out, "G1 X%.3f Y%.3f ; Line %d\n", (line / toolbits) * MM_PER_ROW, origin * mm_per_col, line);
     for (i = origin + 1; i < width; i++) {
         if (toolmask[origin] != toolmask[i] || (i == width-1)) {
             /* Select pattern, and print */
             fprintf(stdout, "T1 P%d ; Pattern %03X\n", toolmask[origin], toolmask[origin]);
-            fprintf(stdout, "G1 Y%f F%f ; Spray pattern\n",  (origin + i - 1) * mm_per_col, SPRAY_RATE);
+            fprintf(stdout, "G1 Y%.3f ; Spray pattern\n",  (origin + i - 1) * mm_per_col);
             origin = i;
         }
     }
@@ -136,7 +135,7 @@ int main(int argc, char **argv)
             fprintf(stderr, "%s: Input error: %s\n", argv[0], strerror(errno));
             return EXIT_FAILURE;
         }
-        emit_pbm(out, pbm, i, stride);
+        if (0) emit_pbm(out, pbm, i, stride);
         bit = i % toolbits;
         for (j = 0; j < x; j++) {
             uint8_t c = pbm[j>>3];

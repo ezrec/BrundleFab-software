@@ -18,6 +18,9 @@ G28 X0 Y0 Z0 E0 ; Home all axes
 G90 ; Absolute positioning
 M226 ; Wait for manual fill operation
 G92 ; Reset zeros after fill operation
+G1 F3000 ; Select feed rate (mm/minute)
+T1 S30000 ; Ink spray rate (dots/minute)
+T0 ; Select no tool
 EOF
 
 for d in `ls ${SVG_DIR}/*.svg | sort`; do
