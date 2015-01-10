@@ -94,12 +94,13 @@ void emit_toolmask(FILE *out, uint16_t *toolmask, int toolbits, int line, int wi
 
     origin = i;
 
-    fprintf(out, "G1 X%.3f Y%.3f ; Line %d\n", (line / toolbits) * MM_PER_ROW, origin * mm_per_col, line);
+    fprintf(out, "T0\n");
+    fprintf(out, "G0 X%.3f Y%.3f ; Line %d\n", (line / toolbits) * MM_PER_ROW, origin * mm_per_col, line);
     for (i = origin + 1; i < width; i++) {
         if (toolmask[origin] != toolmask[i] || (i == width-1)) {
             /* Select pattern, and print */
-            fprintf(stdout, "T1 P%d ; Pattern %03X\n", toolmask[origin], toolmask[origin]);
-            fprintf(stdout, "G1 Y%.3f ; Spray pattern\n",  (origin + i - 1) * mm_per_col);
+            fprintf(out, "T1 P%d ; Pattern %03X\n", toolmask[origin], toolmask[origin]);
+            fprintf(out, "G1 Y%.3f ; Spray pattern\n",  (origin + i - 1) * mm_per_col);
             origin = i;
         }
     }
