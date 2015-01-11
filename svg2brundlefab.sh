@@ -27,8 +27,12 @@ T1 S30000 ; Ink spray rate (dots/minute)
 T0 ; Select no tool
 EOF
 
+# density of 354? Don't know why, but that's what it takes
+# for ImageMagik to make # a 96DPI image of a repsnapper SVG
+#
+DENSITY=354
 for d in `ls ${SVG_DIR}/*.svg | sort`; do
-	convert -border 10 $d pbm:- | ./pbm2brundlefab
+	convert -border 0 -density ${DENSITY} $d pbm:- | ./pbm2brundlefab
 	Z=`echo ${Z} ${Z_SLICE} + p | dc`
 	cat <<EOF
 ; Perform layer operations
