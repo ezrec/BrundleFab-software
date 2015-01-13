@@ -19,10 +19,14 @@ fi
 
 cat <<EOF
 ; Print ${SVG_DIR} to the BrundleFab
-G28 X0 Y0 Z0 E0 ; Home all axes
+G21 ; Units are mm
 G90 ; Absolute positioning
-M226 ; Wait for manual fill operation
-G92 ; Reset zeros after fill operation
+M117 Prepare
+M1 ; Let the use make sure we're ready to home axes
+G28 X0 Y0 ; Home print axes
+M117 Fill powder
+M0 ; Wait for manual fill operation
+M117 ; Clear status message
 T1 S30000 ; Ink spray rate (dots/minute)
 T0 ; Select no tool
 EOF
@@ -39,12 +43,16 @@ for d in `ls ${SVG_DIR}/*.svg | sort`; do
 T0 ; Select no tool
 G0 Y0 ; Reset ink head position
 G1 X${X_MAX} F${SPREAD_FEED} ; Finish the layer deposition
-G0 Z${Z}; Drop the build layer
+G91 ; Relative positioning
+G0 Z${Z_SLICE}; Drop the build layer
+G90 ; Absolute positioning
 T20 ; Select heat lamp tool
 G1 X0 ${DRY_FEED}; Dry the layer
 T0 ; Select no tool
 G0 X${X_MIN} Y0 ; Move to feed start
-G1 E${Z} F${POWDER_FEED}; Extrude a feed layer
+G91 ; Relative positioning
+G1 E${Z_SLICE} F${POWDER_FEED}; Extrude a feed layer
+G90 ; Absolute positioning
 G1 X0 Y0 F${SPREAD_FEED}; Move to print start
 ; Print as we feed powder
 EOF
