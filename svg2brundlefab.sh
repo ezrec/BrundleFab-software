@@ -27,7 +27,7 @@ G28 X0 Y0 ; Home print axes
 M117 Fill powder
 M0 ; Wait for manual fill operation
 M117 ; Clear status message
-T1 S30000 ; Ink spray rate (dots/minute)
+T1 S3 ; Ink spray rate (dots/minute)
 T0 ; Select no tool
 EOF
 
