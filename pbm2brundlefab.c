@@ -104,6 +104,7 @@ void emit_toolmask(FILE *out, uint16_t *toolmask, int toolbits, int line, int wi
             origin = i;
         }
     }
+    fprintf(out, "G0 Y0 ; Render line\n");
 }
 
 int main(int argc, char **argv)
