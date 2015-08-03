@@ -82,7 +82,6 @@ def brundle_extrude(z_mm):
     print """
 ; Perform post-layer operations
 T0 ; Select no tool
-G28 Y0 ; Reset ink head position
 G1 X%.3f F%d ; Finish the layer deposition
 G0 Z%.3f; Drop the build layer
 T20 ; Select heat lamp tool
@@ -90,7 +89,6 @@ G1 X0 %d; Dry the layer
 T0 ; Select no tool
 G0 X%.3f Y0 ; Move to feed start
 G1 E%.3f F%d; Extrude a feed layer
-G28 X0 ; Re-home the X axis
 ; Print as we feed powder
 """ % (X_FEED, SPREAD_FEED, z_mm, DRY_FEED, X_MIN, z_mm, POWDER_FEED)
 
