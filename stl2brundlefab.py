@@ -209,7 +209,7 @@ def main():
     config['do_startup'] = True
     config['do_layer'] = True
     config['do_extrude'] = True
-    config['slicer'] = 'repsnapper'
+    config['slicer'] = 'slic3r'
 
     try:
         opts, args = getopt.getopt(sys.argv[1:], "EGhLps:S", ["help","no-gcode","no-extrude","no-layer","png","no-startup","slicer=","svg","x-offset=","y-offset="])
