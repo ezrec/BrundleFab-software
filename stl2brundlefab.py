@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 
-import sys
-import getopt
-import numpy
-import cairo
 import re
+import sys
+import cairo
+import numpy
+import getopt
+import tempfile
+import subprocess
 from xml.dom import minidom
 
 X_MIN=-195
@@ -92,7 +94,9 @@ G1 E%.3f F%d; Extrude a feed layer
 """ % (X_FEED, SPREAD_FEED, z_mm, DRY_FEED, X_MIN, z_mm, POWDER_FEED)
 
 
-def draw_path(cr, poly):
+def draw_path(config, cr, poly):
+    x_shift = config['x_shift_mm']
+    y_shift = config['y_shift_mm']
     p = poly.getAttribute("points")
     p = re.sub(r'\s+',r' ', p)
     p = re.sub(r' *, *',r' ', p)
@@ -102,16 +106,16 @@ def draw_path(cr, poly):
     for pair in pairs:
         point=[float(f) for f in pair]
         if moved:
-            cr.line_to(point[0], point[1])
+            cr.line_to(point[0] + x_shift, point[1] + y_shift)
         else:
-            cr.move_to(point[0], point[1])
+            cr.move_to(point[0] + x_shift, point[1] + y_shift)
             moved = True
     cr.close_path()
 
 def group_to_slice(config, layer, n):
     # Create a new cairo surface
-    w_dots = int(mm2in(config['y_mm']) * Y_DPI)
-    h_dots = int(mm2in(config['x_mm']) * X_DPI)
+    w_dots = int(mm2in(config['y_bound_mm']) * Y_DPI)
+    h_dots = int(mm2in(config['x_bound_mm']) * X_DPI)
 
     if (h_dots % Y_DOTS) != 0:
         h_dots = int((h_dots + Y_DOTS - 1) / Y_DOTS) * Y_DOTS
@@ -153,13 +157,13 @@ def group_to_slice(config, layer, n):
 
     # Draw filled area
     for contour in contours:
-        draw_path(cr, contour)
+        draw_path(config, cr, contour)
         cr.fill()
 
     # Draw holes
     cr.set_operator(cairo.OPERATOR_CLEAR)
     for hole in holes:
-        draw_path(cr, hole)
+        draw_path(config, cr, hole)
         cr.fill()
 
     # Emit the image
@@ -173,23 +177,42 @@ def group_to_slice(config, layer, n):
 
 def usage():
     print """
-svg2brundlefab [options] sourcefile.svg >sourcefile.gcode
+svg2brundlefab [options] sourcefile.stl >sourcefile.gcode
+svg2brundlefab [options] --svg sourcefile.svg >sourcefile.gcode
 
   -h, --help            This help
+
+Input conversion:
+  --svg                 Treat input as a SVG file
+  -s, --slicer=SLICER   Select a slicer ('repsnapper' or 'slic3r')
+
+Transformation:
+  --x-offset N          Add a X offset (in mm) to the layers
+  --y-offset N          Add a Y offset (in mm) to the layers
+
+GCode output:
+  -G, --no-gcode        Do not generate any GCode (assumes S, E, and L)
+  -S, --no-startup      Do not generate GCode startup code
   -E, --no-extrude      Do not generate E or Z axis commands
   -L, --no-layer        Do not generate layer inking commands
   -p, --png             Generate 'layer-XXX.png' files, one for each layer
+
 """
 
 def main():
     config = {}
-    config['x_mm'] = 200.0
-    config['y_mm'] = 200.0
+    config['x_bound_mm'] = 200.0
+    config['y_bound_mm'] = 200.0
+    config['x_shift_mm'] = 0.0
+    config['y_shift_mm'] = 0.0
     config['do_png'] = False
+    config['do_startup'] = True
     config['do_layer'] = True
     config['do_extrude'] = True
+    config['slicer'] = 'repsnapper'
+
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "EhLp", ["help","no-extrude","no-layer","png"])
+        opts, args = getopt.getopt(sys.argv[1:], "EGhLps:S", ["help","no-gcode","no-extrude","no-layer","png","no-startup","slicer=","svg","x-offset=","y-offset="])
     except getopt.GetoptError as err:
         print(err)
         usage()
@@ -199,20 +222,65 @@ def main():
         if o in ("-h", "--help"):
             usage()
             sys.exit()
+        elif o in ("-S","--no-startup"):
+            config['do_startup'] = False
         elif o in ("-E","--no-extrude"):
             config['do_extrude'] = False
         elif o in ("-L","--no-layer"):
             config['do_layer'] = False
+        elif o in ("-G","--no-gcode"):
+            config['do_startup'] = False
+            config['do_layer'] = False
+            config['do_extrude'] = False
         elif o in ("-p","--png"):
             config['do_png'] = True
+        elif o in ("-s","--slicer"):
+            config['slicer'] = a
+        elif o in ("--x-offset"):
+            config['x_shift_mm'] = float(a)
+        elif o in ("--y-offset"):
+            config['y_shift_mm'] = float(a)
+        elif o in ("--svg"):
+            config['slicer'] = 'svg'
         else:
             assert False, ("unhandled option: %s" % o)
 
-    svg = minidom.parse(args[0])
+    if len(args) != 1:
+        usage()
+        sys.exit(1)
 
-    # Break the STL into layers
+    temp_svg = tempfile.NamedTemporaryFile()
+
+    if config['slicer'] == "slic3r":
+        slicer_args = ["slic3r", "--export-svg", "--output", temp_svg.name, args[0]]
+    elif config['slicer'] == "repsnapper":
+        slicer_args = ["repsnapper", "-t", "-i", args[0], "--svg", temp_svg.name]
+    elif config['slicer'] == "svg":
+        slicer_args = None
+    else:
+        usage()
+        sys.exit(1)
+
+    # Slice STL/AMF into SVG
+    if slicer_args == None:
+        # User gave us an SVG file instead of STL
+        svg_file = args[0]
+    else:
+        # Break the STL into layers
+        rc = subprocess.call(slicer_args)
+        if rc != 0:
+            sys.exit(rc)
+
+        # Parse the SVG file
+        svg_file = temp_svg.name
+
+    # Parse milti-layer SVG file
+    svg = minidom.parse(svg_file)
+
     n = 0
-    brundle_prep(args[0])
+    if config['do_startup']:
+        brundle_prep(args[0])
+
     for layer in svg.getElementsByTagName("g"):
         group_to_slice(config, layer, n)
         n = n + 1
