@@ -2,7 +2,7 @@
 
 import sys
 import getopt
-import array
+import numpy
 import cairo
 import re
 from xml.dom import minidom
@@ -18,7 +18,6 @@ DRY_FEED=3000
 X_DPI=96.0
 Y_DPI=96.0
 
-X_DOTS=12
 Y_DOTS=12
 
 def brundle_prep(name):
@@ -65,18 +64,18 @@ def brundle_line(x_dots, w_dots, toolmask):
 
 
 def brundle_layer(z_mm, w_dots, h_dots, surface):
-    image = surface.get_data()
     stride = surface.get_stride()
-    for y in range(0,h_dots,Y_DOTS):
-        toolmask = array.array('H', '\000' * w_dots * 2)
-        for x in range(0,w_dots):
-            for l in range(0, X_DOTS):
-                if (y + l) >= h_dots:
-                    break
-                val = ord(image[x + (y+l) * stride])
-                if val != 0:
-                    toolmask[x] = toolmask[x] | (1 << l)
+    image = numpy.frombuffer(surface.get_data(), dtype=numpy.uint8)
+    image = numpy.reshape(image, (stride, h_dots))
+    image = numpy.greater(image, 0)
+
+    y = 0
+    for dotline in numpy.vsplit(image, Y_DOTS):
+        toolmask = numpy.zeros((stride))
+        for l in range(0, Y_DOTS):
+            toolmask = toolmask + dotline[l]*(1 << l)
         brundle_line(y, w_dots, toolmask)
+        y = y + Y_DOTS
 
 def brundle_extrude(z_mm):
     print """
@@ -113,6 +112,9 @@ def group_to_slice(config, layer, n):
     # Create a new cairo surface
     w_dots = int(mm2in(config['y_mm']) * Y_DPI)
     h_dots = int(mm2in(config['x_mm']) * X_DPI)
+
+    if (h_dots % Y_DOTS) != 0:
+        h_dots = int((h_dots + Y_DOTS - 1) / Y_DOTS) * Y_DOTS
 
     surface = cairo.ImageSurface(cairo.FORMAT_A8, w_dots, h_dots)
     cr = cairo.Context(surface)
