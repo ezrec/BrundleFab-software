@@ -205,6 +205,7 @@ def main():
     config['y_bound_mm'] = 200.0
     config['x_shift_mm'] = 0.0
     config['y_shift_mm'] = 0.0
+    config['z_slice_mm'] = 0.5
     config['do_png'] = False
     config['do_startup'] = True
     config['do_layer'] = True
@@ -212,12 +213,12 @@ def main():
     config['slicer'] = 'slic3r'
 
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "EGhLps:S", ["help","no-gcode","no-extrude","no-layer","png","no-startup","slicer=","svg","x-offset=","y-offset="])
+        opts, args = getopt.getopt(sys.argv[1:], "EGhLps:S", ["help","no-gcode","no-extrude","no-layer","png","no-startup","slicer=","svg","x-offset=","y-offset=","z-slice="])
     except getopt.GetoptError as err:
         print(err)
         usage()
         sys.exit(2)
-    z_step = 0.5 #mm
+
     for o, a in opts:
         if o in ("-h", "--help"):
             usage()
@@ -236,12 +237,14 @@ def main():
             config['do_png'] = True
         elif o in ("-s","--slicer"):
             config['slicer'] = a
+        elif o in ("--svg"):
+            config['slicer'] = 'svg'
         elif o in ("--x-offset"):
             config['x_shift_mm'] = float(a)
         elif o in ("--y-offset"):
             config['y_shift_mm'] = float(a)
-        elif o in ("--svg"):
-            config['slicer'] = 'svg'
+        elif o in ("--z-slice"):
+            config['z_slice_mm'] = float(a)
         else:
             assert False, ("unhandled option: %s" % o)
 
@@ -252,7 +255,7 @@ def main():
     temp_svg = tempfile.NamedTemporaryFile()
 
     if config['slicer'] == "slic3r":
-        slicer_args = ["slic3r", "--export-svg", "--output", temp_svg.name, args[0]]
+        slicer_args = ["slic3r", "--export-svg", "--output", temp_svg.name, args[0], "--layer-height", str(config['z_slice_mm']), "--nozzle-diameter", str(config['z_slice_mm'])]
     elif config['slicer'] == "repsnapper":
         slicer_args = ["repsnapper", "-t", "-i", args[0], "--svg", temp_svg.name]
     elif config['slicer'] == "svg":
