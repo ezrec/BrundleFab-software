@@ -9,6 +9,7 @@ from xml.dom import minidom
 
 X_MIN=-195
 X_MAX=180
+X_FEED=365
 
 SPREAD_FEED=3000
 INK_FEED=3
@@ -87,7 +88,7 @@ G0 X%.3f Y0 ; Move to feed start
 G1 E%.3f F%d; Extrude a feed layer
 G28 X0 ; Re-home the X axis
 ; Print as we feed powder
-""" % (X_MAX, SPREAD_FEED, z_mm, DRY_FEED, X_MIN, z_mm, POWDER_FEED)
+""" % (X_FEED, SPREAD_FEED, z_mm, DRY_FEED, X_MIN, z_mm, POWDER_FEED)
 
 
 def draw_path(cr, poly):
