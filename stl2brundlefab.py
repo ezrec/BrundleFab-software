@@ -72,7 +72,7 @@ def brundle_layer(z_mm, w_dots, h_dots, surface):
     image = numpy.greater(image, 0)
 
     y = 0
-    for dotline in numpy.vsplit(image, Y_DOTS):
+    for dotline in numpy.vsplit(image, h_dots/Y_DOTS):
         toolmask = numpy.zeros((stride))
         for l in range(0, Y_DOTS):
             toolmask = toolmask + dotline[l]*(1 << l)
