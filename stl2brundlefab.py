@@ -34,7 +34,6 @@ M117 Fill powder
 ;M0 ; Wait for manual fill operation
 M117 ; Clear status message
 T1 S%d ; Ink spray rate (dots/minute)
-T0 ; Select no tool
 ; Print as we feed powder
 """ % (name, INK_FEED)
 
@@ -54,13 +53,15 @@ def brundle_line(x_dots, w_dots, toolmask):
         return
 
     print "T0"
-    print "G0 X%.3f Y%.3f" % (in2mm(x_dots / X_DPI), in2mm(origin / Y_DPI))
+    print "G1 X%.3f" % (in2mm(x_dots / X_DPI))
+    print "T1 P0"
+    print "G0 Y%.3f" % (in2mm(origin / Y_DPI))
     for i in range(origin+1, w_dots):
         if (toolmask[origin] != toolmask[i]) or (i == w_dots - 1):
             if (i == w_dots - 1) and (toolmask[origin] == 0):
                 break
             print "T1 P%d" % (toolmask[origin])
-            print "G1 Y%.3f" % (in2mm((i - 1) / Y_DPI))
+            print "G0 Y%.3f" % (in2mm((i - 1) / Y_DPI))
             origin = i
     print "G0 Y0"
 
