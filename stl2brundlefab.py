@@ -43,7 +43,7 @@ def in2mm(inch):
 def mm2in(mm):
     return mm / 25.4
 
-def brundle_line(x_dots, w_dots, toolmask):
+def brundle_line(x_dots, w_dots, toolmask, weave=True):
     origin = None
     for i in range(0, w_dots):
         if toolmask[i] != 0:
@@ -52,7 +52,6 @@ def brundle_line(x_dots, w_dots, toolmask):
     if origin == None:
         return
 
-    print "T0"
     print "G1 X%.3f" % (in2mm(x_dots / X_DPI))
     print "T1 P0"
     print "G0 Y%.3f" % (in2mm(origin / Y_DPI))
@@ -63,10 +62,25 @@ def brundle_line(x_dots, w_dots, toolmask):
             print "T1 P%d" % (toolmask[origin])
             print "G0 Y%.3f" % (in2mm((i - 1) / Y_DPI))
             origin = i
+
+    # Switching to tool 0 will cause a forward flush of the
+    # inkbar, and the ink head will end up at the end of the
+    # line.
+    print "T0"
+
+    # For interweave support, we advance X by a half-dot, and
+    # cover the dost inbetween the forward pass on the
+    # reverse pass
+    if weave:
+        print "G1 X%.3f" % (in2mm((x_dots + 0.5) / X_DPI))
+
+    # Switch back to T1 to ink on the reverse movement of
+    # then inkbar
+    print "T1"
     print "G0 Y0"
 
 
-def brundle_layer(z_mm, w_dots, h_dots, surface):
+def brundle_layer(z_mm, w_dots, h_dots, surface, weave=True):
     stride = surface.get_stride()
     image = numpy.frombuffer(surface.get_data(), dtype=numpy.uint8)
     image = numpy.reshape(image, (stride, h_dots))
@@ -77,7 +91,7 @@ def brundle_layer(z_mm, w_dots, h_dots, surface):
         toolmask = numpy.zeros((stride))
         for l in range(0, Y_DOTS):
             toolmask = toolmask + dotline[l]*(1 << l)
-        brundle_line(y, w_dots, toolmask)
+        brundle_line(y, w_dots, toolmask, weave)
         y = y + Y_DOTS
 
 def brundle_extrude(z_mm):
@@ -172,7 +186,7 @@ def group_to_slice(config, layer, n):
     if config['do_png']:
         surface.write_to_png("layer-%03d.png" % n)
     if config['do_layer']:
-        brundle_layer(z_mm, w_dots, h_dots, surface)
+        brundle_layer(z_mm, w_dots, h_dots, surface, weave=config['do_weave'])
     if config['do_extrude']:
         brundle_extrude(z_mm)
 
@@ -188,14 +202,16 @@ Input conversion:
   -s, --slicer=SLICER   Select a slicer ('repsnapper' or 'slic3r')
 
 Transformation:
+  --scale N             Scale object (before offsetting)
   --x-offset N          Add a X offset (in mm) to the layers
   --y-offset N          Add a Y offset (in mm) to the layers
 
 GCode output:
   -G, --no-gcode        Do not generate any GCode (assumes S, E, and L)
   -S, --no-startup      Do not generate GCode startup code
-  -E, --no-extrude      Do not generate E or Z axis commands
   -L, --no-layer        Do not generate layer inking commands
+  -W, --no-weave        Do not generate interweave commands
+  -E, --no-extrude      Do not generate E or Z axis commands
   -p, --png             Generate 'layer-XXX.png' files, one for each layer
 
 """
@@ -207,14 +223,16 @@ def main():
     config['x_shift_mm'] = 0.0
     config['y_shift_mm'] = 0.0
     config['z_slice_mm'] = 0.5
+    config['scale'] = 1.0
     config['do_png'] = False
     config['do_startup'] = True
     config['do_layer'] = True
     config['do_extrude'] = True
+    config['do_weave'] = True
     config['slicer'] = 'slic3r'
 
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "EGhLps:S", ["help","no-gcode","no-extrude","no-layer","png","no-startup","slicer=","svg","x-offset=","y-offset=","z-slice="])
+        opts, args = getopt.getopt(sys.argv[1:], "EGhLps:SW", ["help","no-gcode","no-extrude","no-layer","png","no-startup","no-weave","slicer=","svg","x-offset=","y-offset=","z-slice=","scale="])
     except getopt.GetoptError as err:
         print(err)
         usage()
@@ -234,6 +252,8 @@ def main():
             config['do_startup'] = False
             config['do_layer'] = False
             config['do_extrude'] = False
+        elif o in ("--no-weave"):
+            config['do_weave'] = False
         elif o in ("-p","--png"):
             config['do_png'] = True
         elif o in ("-s","--slicer"):
@@ -246,6 +266,8 @@ def main():
             config['y_shift_mm'] = float(a)
         elif o in ("--z-slice"):
             config['z_slice_mm'] = float(a)
+        elif o in ("--scale"):
+            config['scale'] = float(a)
         else:
             assert False, ("unhandled option: %s" % o)
 
@@ -256,9 +278,18 @@ def main():
     temp_svg = tempfile.NamedTemporaryFile()
 
     if config['slicer'] == "slic3r":
-        slicer_args = ["slic3r", "--export-svg", "--output", temp_svg.name, args[0], "--layer-height", str(config['z_slice_mm']), "--nozzle-diameter", str(config['z_slice_mm'])]
+        slicer_args = ["slic3r",
+                            "--export-svg",
+                            "--output", temp_svg.name,
+                            "--layer-height", str(config['z_slice_mm']),
+                            "--nozzle-diameter", str(config['z_slice_mm'] * 1.1),
+                            "--scale", str(config['scale']),
+                            args[0]]
     elif config['slicer'] == "repsnapper":
-        slicer_args = ["repsnapper", "-t", "-i", args[0], "--svg", temp_svg.name]
+        slicer_args = ["repsnapper",
+                            "-t",
+                            "-i", args[0],
+                            "--svg", temp_svg.name]
     elif config['slicer'] == "svg":
         slicer_args = None
     else:
@@ -271,7 +302,7 @@ def main():
         svg_file = args[0]
     else:
         # Break the STL into layers
-        rc = subprocess.call(slicer_args)
+        rc = subprocess.call(slicer_args, stdout=sys.stderr)
         if rc != 0:
             sys.exit(rc)
 
