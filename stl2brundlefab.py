@@ -9,33 +9,33 @@ import tempfile
 import subprocess
 from xml.dom import minidom
 
-X_MIN=-195
-X_MAX=180
-X_FEED=365
+X_MIN=0             # Start of printable area
+X_FEED=365          # End of printable area
 
-SPREAD_FEED=3000
-INK_FEED=1
-POWDER_FEED=4500
-DRY_FEED=3000
+SPREAD_FEED=3000    # Spread rate while depositing the layer
+INK_FEED=4          # Number of sprays per dotline
+POWDER_FEED=4500    # Extruder feed rate (mm/minute)
+FUSER_FEED=1500     # Fuser pass rate (mm/minute)
 X_DPI=96.0
 Y_DPI=96.0
 
 Y_DOTS=12
 
-def brundle_prep(name):
+def brundle_prep(name, max_z_mm):
     print """
 ; Print %s to the BrundleFab
 G21 ; Units are mm
 G90 ; Absolute positioning
 M117 Prepare
 ;M1 ; Let the use make sure we're ready to home axes
-G28 X0 Y0 ; Home print axes
-M117 Fill powder
-;M0 ; Wait for manual fill operation
+G28 X0 Y0 E0 ; Home print axes
+; NOTE: Z is _not_ homed, as it may be part of a multi-file print
+M117 Fill %dmm
+M0 ; Wait for manual fill operation
 M117 ; Clear status message
 T1 S%d ; Ink spray rate (dots/minute)
 ; Print as we feed powder
-""" % (name, INK_FEED)
+""" % (name, int(max_z_mm), INK_FEED)
 
 def in2mm(inch):
     return inch * 25.4
@@ -80,7 +80,7 @@ def brundle_line(x_dots, w_dots, toolmask, weave=True):
     print "G0 Y0"
 
 
-def brundle_layer(z_mm, w_dots, h_dots, surface, weave=True):
+def brundle_layer(w_dots, h_dots, surface, weave=True):
     stride = surface.get_stride()
     image = numpy.frombuffer(surface.get_data(), dtype=numpy.uint8)
     image = numpy.reshape(image, (stride, h_dots))
@@ -94,19 +94,28 @@ def brundle_layer(z_mm, w_dots, h_dots, surface, weave=True):
         brundle_line(y, w_dots, toolmask, weave)
         y = y + Y_DOTS
 
-def brundle_extrude(z_mm):
+def brundle_layer_prep(extrude_delta_mm):
+    print """
+; Perform pre-layer operations
+G0 X%.3f Y0 ; Move to feed start
+G91 ; Relative positioning
+G1 E%.3f F%d; Extrude a feed layer
+G90 ; Absolute positioning
+; Print as we feed powder
+""" % (X_MIN, extrude_delta_mm, POWDER_FEED)
+
+def brundle_layer_finish(z_delta_mm):
     print """
 ; Perform post-layer operations
 T0 ; Select no tool
 G1 X%.3f F%d ; Finish the layer deposition
+G91 ; Relative positioning
 G0 Z%.3f; Drop the build layer
+G90 ; Absolute positioning
 T20 ; Select heat lamp tool
-G1 X0 %d; Dry the layer
+G1 X0 F%d; Fuse the layer
 T0 ; Select no tool
-G0 X%.3f Y0 ; Move to feed start
-G1 E%.3f F%d; Extrude a feed layer
-; Print as we feed powder
-""" % (X_FEED, SPREAD_FEED, z_mm, DRY_FEED, X_MIN, z_mm, POWDER_FEED)
+""" % (X_FEED, SPREAD_FEED, z_delta_mm, FUSER_FEED)
 
 
 def draw_path(config, cr, poly):
@@ -127,7 +136,20 @@ def draw_path(config, cr, poly):
             moved = True
     cr.close_path()
 
-def group_to_slice(config, layer, n):
+def group_z(config, layer):
+    z_mm = None
+    if layer.hasAttribute("slic3r:z"):
+        # slic3r
+        z_mm = float(layer.getAttribute("slic3r:z")) * 1000000
+    else:
+        # repsnapper
+        label = layer.getAttribute("id").split(':')
+        if len(label) != 2:
+            return
+        z_mm = float(label[1])
+    return z_mm
+
+def group_to_slice(config, layer, n, last_z_mm = None):
     # Create a new cairo surface
     w_dots = int(mm2in(config['y_bound_mm']) * Y_DPI)
     h_dots = int(mm2in(config['x_bound_mm']) * X_DPI)
@@ -139,16 +161,7 @@ def group_to_slice(config, layer, n):
     cr = cairo.Context(surface)
     cr.set_antialias(cairo.ANTIALIAS_NONE)
 
-    if layer.hasAttribute("slic3r:z"):
-        # slic3r
-        z_mm = float(layer.getAttribute("slic3r:z")) * 1000000
-    else:
-        # repsnapper
-        label = layer.getAttribute("id").split(':')
-        if len(label) != 2:
-            return
-        z_mm = float(label[1])
-
+    z_mm = group_z(config, layer)
     i = 0
     contours = []
     holes = []
@@ -185,10 +198,13 @@ def group_to_slice(config, layer, n):
     surface.flush()
     if config['do_png']:
         surface.write_to_png("layer-%03d.png" % n)
+    if config['do_extrude'] and last_z_mm != None:
+        brundle_layer_finish(z_mm - last_z_mm)
+        brundle_layer_prep(z_mm - last_z_mm)
     if config['do_layer']:
-        brundle_layer(z_mm, w_dots, h_dots, surface, weave=config['do_weave'])
-    if config['do_extrude']:
-        brundle_extrude(z_mm)
+        brundle_layer(w_dots, h_dots, surface, weave=config['do_weave'])
+
+    return z_mm
 
 def usage():
     print """
@@ -312,13 +328,24 @@ def main():
     # Parse milti-layer SVG file
     svg = minidom.parse(svg_file)
 
-    n = 0
-    if config['do_startup']:
-        brundle_prep(args[0])
-
+    max_z_mm = None
     for layer in svg.getElementsByTagName("g"):
-        group_to_slice(config, layer, n)
+        max_z_mm = group_z(config, layer)
+
+    if config['do_startup']:
+        brundle_prep(args[0], max_z_mm)
+
+    last_z_mm = None
+    z_mm = None
+    n = 0
+    for layer in svg.getElementsByTagName("g"):
+        last_z_mm = z_mm
+        z_mm = group_to_slice(config, layer, n, last_z_mm)
         n = n + 1
+
+    # Finish the last layer
+    if config['do_extrude']:
+        brundle_layer_finish(z_mm - last_z_mm)
 
 
 if __name__ == "__main__":
