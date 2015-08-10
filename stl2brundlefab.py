@@ -9,8 +9,8 @@ import tempfile
 import subprocess
 from xml.dom import minidom
 
-X_MIN=0             # Start of printable area
-X_FEED=365          # End of printable area
+X_FEED_MIN=0        # Start of feed blade pass
+X_FEED_MAX=365      # End of feed blade pass
 
 SPREAD_FEED=3000    # Spread rate while depositing the layer
 INK_FEED=4          # Number of sprays per dotline
@@ -102,7 +102,7 @@ G91 ; Relative positioning
 G1 E%.3f F%d; Extrude a feed layer
 G90 ; Absolute positioning
 ; Print as we feed powder
-""" % (X_MIN, extrude_delta_mm, POWDER_FEED)
+""" % (X_FEED_MIN, extrude_delta_mm, POWDER_FEED)
 
 def brundle_layer_finish(z_delta_mm):
     print """
@@ -115,7 +115,7 @@ G90 ; Absolute positioning
 T20 ; Select heat lamp tool
 G1 X0 F%d; Fuse the layer
 T0 ; Select no tool
-""" % (X_FEED, SPREAD_FEED, z_delta_mm, FUSER_FEED)
+""" % (X_FEED_MAX, SPREAD_FEED, z_delta_mm, FUSER_FEED)
 
 
 def draw_path(config, cr, poly):
