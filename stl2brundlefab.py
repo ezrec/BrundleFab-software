@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 # Copyright 2015, Jason S. McMullan <jason.mcmullan@gmail.com>
 #
+# stl2brundlefab.py: Convert STL objects into GCode for BrundleFab
+#
 # Licensed under the MIT License:
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -20,6 +22,66 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
+#
+############################ Theory of Operation ###########################
+#
+# This program takes as input a STL 3D object file, and emits GCode
+# suitable for input to the BrundleFab thermal fusing powderbed printer.
+#
+# The BrundleFab has a Y axis carriage with a combined ink head, thermal
+# fuser, and repowder blade, herein called the 'layer head'.
+#
+# The layer head completely covers the feed bin, and can be used to preserve
+# powder quality between prints.
+#           ___
+#          /   T
+#       __/_ F _\__________oH
+#    ||/ <-R          S-> \ H                                      ||
+#    ||-------------------||-------------------||                  ||
+#    ||    Feed Bin       ||    Part Bin       ||    Waste Bin     ||
+#    ||                   ||===================||                  ||
+#    ||===================||         ::        ||                  ||
+#    ||       E :: Axis   ||       Z :: Axis   ||                  ||
+#
+#  Key:
+#
+#    || - Wall of the powder chambers
+#    -- - Top of the feed/part powder layers
+#    == - Top of the feed/part pistons
+#    F  - Thermal fuser (halogen bulb)
+#    T  - Thermal sensor
+#    R  - Recoating blade
+#    S  - Powder sealing blade
+#    H  - Ink head
+#    o  - Ink head rail
+#
+# A BrundleFab layer is constructed as follows:
+#
+# 1. The layer head begins at the minimum X position, positioning
+#    the repowder blade at the start of the Feed Bin
+# 2. The Feed Bin raises by one layer width.
+# 3. The layer head advances in X until the the fuser (F) is at the start
+#    at the start of Part Bin.
+# 4. The fuser is enabled, and brought up to temperature.
+# 5. The layer head advances in X, depositing fresh powder onto the newly
+#    fused layer, until the the fuser (F) is at the start of the Waste Bin
+# 6. The fuser is disabled.
+# 7. The layer head advances in X, until the repowder blade (R) is at the
+#    start of the Waste Bin
+# 8. The Part Bin (Z) and the Feed Bin (E) both drop by 1mm.
+#    This is needed so that the repowder blade will not disturb the existing
+#    powder layer during the inking pass.
+# 9. The layer head retracts in X until the ink head (H) is at the end
+#    of the Part Bin.
+# 10.The ink deposition phase then begins, depositing ink on the
+#    fresh powder layer, as the layer head retracts in X.
+# 11.The layer head is fully retraced.
+#    This will position the repowder blade (R) at the start of the powder
+#    feed bin.
+# 12.The Feed Bin raises by 1mm, the Part Bin raises by (1mm - layer width)
+#
+# Repeat steps 1 - 12 for all layers. A final 'no ink' layer is inserted
+# after the last printed layer to ensure compete fusing.
 
 import re
 import sys
