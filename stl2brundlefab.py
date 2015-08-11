@@ -105,6 +105,7 @@ Y_DPI=96.0
 Y_DOTS=12
 
 config = {}
+config['fuser_temp'] = 0.0      # Celsius
 
 def brundle_prep(name, max_z_mm):
     print """
@@ -303,9 +304,14 @@ Input conversion:
   -s, --slicer=SLICER   Select a slicer ('repsnapper' or 'slic3r')
 
 Transformation:
+  --units=in            Assume model was in inches
+  --units=mm            Assume model was in mm (default)
   --scale N             Scale object (before offsetting)
   --x-offset N          Add a X offset (in mm) to the layers
   --y-offset N          Add a Y offset (in mm) to the layers
+
+Fuser control:
+  --fuser-temp N        Temperature of the fuser (at heat shield), in C.
 
 GCode output:
   -G, --no-gcode        Do not generate any GCode (assumes S, E, and L)
@@ -331,8 +337,14 @@ def main():
     config['do_weave'] = True
     config['slicer'] = 'slic3r'
 
+    unit = {}
+    unit['mm'] = 1.0
+    unit['in'] = 25.4
+
+    units = 'mm'
+
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "EGhLps:SW", ["help","no-gcode","no-extrude","no-layer","png","no-startup","no-weave","slicer=","svg","x-offset=","y-offset=","z-slice=","scale="])
+        opts, args = getopt.getopt(sys.argv[1:], "EGhLps:SW", ["help","no-gcode","no-extrude","no-layer","png","no-startup","no-weave","slicer=","svg","x-offset=","y-offset=","z-slice=","scale=","fuser-temp=","units="])
     except getopt.GetoptError as err:
         print(err)
         usage()
@@ -361,19 +373,28 @@ def main():
         elif o in ("--svg"):
             config['slicer'] = 'svg'
         elif o in ("--x-offset"):
-            config['x_shift_mm'] = float(a)
+            config['x_shift_mm'] = float(a) * unit[units]
         elif o in ("--y-offset"):
-            config['y_shift_mm'] = float(a)
+            config['y_shift_mm'] = float(a) * unit[units]
         elif o in ("--z-slice"):
-            config['z_slice_mm'] = float(a)
+            config['z_slice_mm'] = float(a) * unit[units]
         elif o in ("--scale"):
             config['scale'] = float(a)
+        elif o in ("--fuser-temp"):
+            config['fuser_temp'] = float(a)
+        elif o in ("--units"):
+            if not units in unit:
+                usage()
+                sys.exit(1)
+            units = a
         else:
             assert False, ("unhandled option: %s" % o)
 
     if len(args) != 1:
         usage()
         sys.exit(1)
+
+    config['scale'] = config['scale'] * unit[units]
 
     temp_svg = tempfile.NamedTemporaryFile()
 
