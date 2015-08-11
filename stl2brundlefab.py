@@ -178,17 +178,18 @@ def brundle_line(x_dots, w_dots, toolmask, weave=True):
     gc(None, "T0")
     gc(None, "T1 P0")
 
-    # For interweave support, we advance X by a half-dot, and
-    # cover the dost inbetween the forward pass on the
+    # For interweave support, we retract X by a half-dot, and
+    # cover the dots inbetween the forward pass on the
     # reverse pass
     if weave:
-        gc(None, "G1 X%.3f" % (X_BIN_PART + in2mm((x_dots + 0.5) / X_DPI)))
+        gc(None, "G1 X%.3f" % (X_BIN_PART + in2mm((x_dots - 0.5) / X_DPI)))
 
     # Switch back to T1 to ink on the reverse movement of
     # then inkbar
     gc(None, "G1 Y0")
 
 
+# Note: h_dots _must_ be a multiple of Y_DOTS!
 def brundle_layer(w_dots, h_dots, surface, weave=True):
     if not config['do_layer']:
         return
@@ -198,13 +199,17 @@ def brundle_layer(w_dots, h_dots, surface, weave=True):
     image = numpy.reshape(image, (stride, h_dots))
     image = numpy.greater(image, 0)
 
-    y = 0
-    for dotline in numpy.vsplit(image, h_dots/Y_DOTS):
+    # Issue the printbars in reverse order, since
+    # we are drawing in the negiative X direction
+    y = h_dots - Y_DOTS
+    dotlines = numpy.vsplit(image, h_dots/Y_DOTS)
+    list.reverse(dotlines)
+    for dotline in dotlines:
         toolmask = numpy.zeros((stride))
         for l in range(0, Y_DOTS):
             toolmask = toolmask + dotline[l]*(1 << l)
         brundle_line(y, w_dots, toolmask, weave)
-        y = y + Y_DOTS
+        y = y - Y_DOTS
 
 def brundle_layer_prep(e_delta_mm, z_delta_mm):
     if not config['do_extrude']:
