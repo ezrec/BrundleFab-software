@@ -104,6 +104,8 @@ Y_DPI=96.0
 
 Y_DOTS=12
 
+config = {}
+
 def brundle_prep(name, max_z_mm):
     print """
 ; Print %s to the BrundleFab
@@ -201,7 +203,7 @@ T0 ; Select no tool
 """ % (X_FEED_MAX, SPREAD_FEED, z_delta_mm, FUSER_FEED)
 
 
-def draw_path(config, cr, poly):
+def draw_path(cr, poly):
     x_shift = config['x_shift_mm']
     y_shift = config['y_shift_mm']
     p = poly.getAttribute("points")
@@ -219,7 +221,7 @@ def draw_path(config, cr, poly):
             moved = True
     cr.close_path()
 
-def group_z(config, layer):
+def group_z(layer):
     z_mm = None
     if layer.hasAttribute("slic3r:z"):
         # slic3r
@@ -232,7 +234,7 @@ def group_z(config, layer):
         z_mm = float(label[1])
     return z_mm
 
-def group_to_slice(config, layer, n, last_z_mm = None):
+def group_to_slice(layer, n, last_z_mm = None):
     # Create a new cairo surface
     w_dots = int(mm2in(config['y_bound_mm']) * Y_DPI)
     h_dots = int(mm2in(config['x_bound_mm']) * X_DPI)
@@ -244,7 +246,7 @@ def group_to_slice(config, layer, n, last_z_mm = None):
     cr = cairo.Context(surface)
     cr.set_antialias(cairo.ANTIALIAS_NONE)
 
-    z_mm = group_z(config, layer)
+    z_mm = group_z(layer)
     i = 0
     contours = []
     holes = []
@@ -268,13 +270,13 @@ def group_to_slice(config, layer, n, last_z_mm = None):
 
     # Draw filled area
     for contour in contours:
-        draw_path(config, cr, contour)
+        draw_path(cr, contour)
         cr.fill()
 
     # Draw holes
     cr.set_operator(cairo.OPERATOR_CLEAR)
     for hole in holes:
-        draw_path(config, cr, hole)
+        draw_path(cr, hole)
         cr.fill()
 
     # Emit the image
@@ -316,7 +318,6 @@ GCode output:
 """
 
 def main():
-    config = {}
     config['x_bound_mm'] = 200.0
     config['y_bound_mm'] = 200.0
     config['x_shift_mm'] = 0.0
@@ -413,7 +414,7 @@ def main():
 
     max_z_mm = None
     for layer in svg.getElementsByTagName("g"):
-        max_z_mm = group_z(config, layer)
+        max_z_mm = group_z(layer)
 
     if config['do_startup']:
         brundle_prep(args[0], max_z_mm)
@@ -423,7 +424,7 @@ def main():
     n = 0
     for layer in svg.getElementsByTagName("g"):
         last_z_mm = z_mm
-        z_mm = group_to_slice(config, layer, n, last_z_mm)
+        z_mm = group_to_slice(layer, n, last_z_mm)
         n = n + 1
 
     # Finish the last layer
