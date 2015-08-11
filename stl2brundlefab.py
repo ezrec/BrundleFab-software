@@ -395,6 +395,7 @@ def main():
     unit = {}
     unit['mm'] = 1.0
     unit['in'] = 25.4
+    unit['ti'] = 2.54   # Tenths of inches
 
     units = 'mm'
 
