@@ -59,7 +59,7 @@
 #
 # 1. The layer head begins at the minimum X position, positioning
 #    the repowder blade at the start of the Feed Bin
-# 2. The Feed Bin raises by one layer width.
+# 2. The Feed Bin raises by one layer width, Part Bin lowers by one width
 # 3. The layer head advances in X until the the fuser (F) is at the start
 #    at the start of Part Bin.
 # 4. The fuser is enabled, and brought up to temperature.
@@ -78,7 +78,7 @@
 # 11.The layer head is fully retraced.
 #    This will position the repowder blade (R) at the start of the powder
 #    feed bin.
-# 12.The Feed Bin raises by 1mm, the Part Bin raises by (1mm - layer width)
+# 12.The Feed Bin raises by 1mm, the Part Bin raises by 1mm
 #
 # Repeat steps 1 - 12 for all layers. A final 'no ink' layer is inserted
 # after the last printed layer to ensure compete fusing.
@@ -92,36 +92,58 @@ import tempfile
 import subprocess
 from xml.dom import minidom
 
-X_FEED_MIN=0        # Start of feed blade pass
-X_FEED_MAX=365      # End of feed blade pass
+X_BIN_FEED=0        # Start of the feed bin
+X_BIN_PART=198      # Start of the part bin
+X_BIN_WASTE=385     # Start of the waste bin
 
-SPREAD_FEED=3000    # Spread rate while depositing the layer
-INK_FEED=4          # Number of sprays per dotline
-POWDER_FEED=4500    # Extruder feed rate (mm/minute)
-FUSER_FEED=1500     # Fuser pass rate (mm/minute)
+X_OFFSET_RECOAT=0   # Offset of the recoater blade
+X_OFFSET_FUSER=60   # Offset of midpoint of fuser
+X_OFFSET_PEN=160    # Offset of the pen
+
+FEED_SPREAD=3000    # Spread rate while depositing the layer
+FEED_INK=4          # Number of sprays per dotline
+FEED_POWDER=4500    # Extruder feed rate (mm/minute)
+FEED_FUSER=1500     # Fuser pass rate (mm/minute)
 X_DPI=96.0
 Y_DPI=96.0
 
 Y_DOTS=12
 
 config = {}
+config['gcode_terse'] = False
 config['fuser_temp'] = 0.0      # Celsius
 
+def gc(comment, code = None):
+    if config['gcode_terse']:
+        comment = None
+
+    if comment == None and code != None:
+        print "%s" % (code)
+    elif code != None:
+        print "%s ; %s" % (code, comment)
+    elif comment != None:
+        print "; %s" % (comment)
+    pass
+
 def brundle_prep(name, max_z_mm):
-    print """
-; Print %s to the BrundleFab
-G21 ; Units are mm
-G90 ; Absolute positioning
-M117 Prepare
-;M1 ; Let the use make sure we're ready to home axes
-G28 X0 Y0 E0 ; Home print axes
-; NOTE: Z is _not_ homed, as it may be part of a multi-file print
-M117 Fill %dmm
-M0 ; Wait for manual fill operation
-M117 ; Clear status message
-T1 S%d ; Ink spray rate (dots/minute)
-; Print as we feed powder
-""" % (name, int(max_z_mm), INK_FEED)
+    gc("Print %s to the BrundleFab" % name)
+    gc("Units are mm", "G21")
+    gc("Absolute positioning", "G90")
+    gc("Set pen tool offset", "G10 L1 P1 X%.3f" % (X_OFFSET_PEN))
+    gc("Set fuser tool offset", "G10 L1 P20 X%.3f" % (X_OFFSET_FUSER))
+    gc("Set repowder blade offset", "G10 L1 P21 X%.3f" % (X_OFFSET_RECOAT))
+
+    gc(None, "M117 Ready to home")
+    gc("Let the user make sure we're ready to home axes", "M0")
+    gc("Home print axes", "G28 X0 Y0 E0")
+    gc("NOTE: Z is _not_ homed, as it may be part of a multi-file print")
+    gc(None, "M117 Fill %dmm" % (int(max_z_mm)))
+    gc("Wait for manual fill operation", "M0")
+    gc("Clear status message", "M117")
+    gc("Ink spray rate (sprays/dot)", "T1 S%d" % (FEED_INK))
+
+    gc("Select repowder tool", "T21")
+    gc("Move to feed start", "G1 X%.3f" % (X_BIN_FEED))
 
 def in2mm(inch):
     return inch * 25.4
@@ -138,35 +160,39 @@ def brundle_line(x_dots, w_dots, toolmask, weave=True):
     if origin == None:
         return
 
-    print "G1 X%.3f" % (in2mm(x_dots / X_DPI))
-    print "T1 P0"
-    print "G0 Y%.3f" % (in2mm(origin / Y_DPI))
+    gc(None, "G1 X%.3f" % (X_BIN_PART + in2mm(x_dots / X_DPI)))
+    gc(None, "T1 P0")
+    gc(None, "G1 Y%.3f" % (in2mm(origin / Y_DPI)))
+
     for i in range(origin+1, w_dots):
         if (toolmask[origin] != toolmask[i]) or (i == w_dots - 1):
             if (i == w_dots - 1) and (toolmask[origin] == 0):
                 break
-            print "T1 P%d" % (toolmask[origin])
-            print "G0 Y%.3f" % (in2mm((i - 1) / Y_DPI))
+            gc(None, "T1 P%d" % (toolmask[origin]))
+            gc(None, "G1 Y%.3f" % (in2mm((i - 1) / Y_DPI)))
             origin = i
 
     # Switching to tool 0 will cause a forward flush of the
     # inkbar, and the ink head will end up at the end of the
     # line.
-    print "T0"
+    gc(None, "T0")
+    gc(None, "T1 P0")
 
     # For interweave support, we advance X by a half-dot, and
     # cover the dost inbetween the forward pass on the
     # reverse pass
     if weave:
-        print "G1 X%.3f" % (in2mm((x_dots + 0.5) / X_DPI))
+        gc(None, "G1 X%.3f" % (X_BIN_PART + in2mm((x_dots + 0.5) / X_DPI)))
 
     # Switch back to T1 to ink on the reverse movement of
     # then inkbar
-    print "T1"
-    print "G0 Y0"
+    gc(None, "G1 Y0")
 
 
 def brundle_layer(w_dots, h_dots, surface, weave=True):
+    if not config['do_layer']:
+        return
+
     stride = surface.get_stride()
     image = numpy.frombuffer(surface.get_data(), dtype=numpy.uint8)
     image = numpy.reshape(image, (stride, h_dots))
@@ -180,29 +206,49 @@ def brundle_layer(w_dots, h_dots, surface, weave=True):
         brundle_line(y, w_dots, toolmask, weave)
         y = y + Y_DOTS
 
-def brundle_layer_prep(extrude_delta_mm):
-    print """
-; Perform pre-layer operations
-G0 X%.3f Y0 ; Move to feed start
-G91 ; Relative positioning
-G1 E%.3f F%d; Extrude a feed layer
-G90 ; Absolute positioning
-; Print as we feed powder
-""" % (X_FEED_MIN, extrude_delta_mm, POWDER_FEED)
+def brundle_layer_prep(e_delta_mm, z_delta_mm):
+    if not config['do_extrude']:
+        return
 
-def brundle_layer_finish(z_delta_mm):
-    print """
-; Perform post-layer operations
-T0 ; Select no tool
-G1 X%.3f F%d ; Finish the layer deposition
-G91 ; Relative positioning
-G0 Z%.3f; Drop the build layer
-G90 ; Absolute positioning
-T20 ; Select heat lamp tool
-G1 X0 F%d; Fuse the layer
-T0 ; Select no tool
-""" % (X_FEED_MAX, SPREAD_FEED, z_delta_mm, FUSER_FEED)
+    gc("1. Assume layer head is at feed start")
+    gc("2. Raise Feed Bin by one layer width, lower Part bin")
+    gc(  "Relative positioning", "G91")
+    gc(  "Extrude a feed layer", "G1 E%.3f Z%.3f F%d" % (e_delta_mm, z_delta_mm, FEED_POWDER))
+    gc(  "Absolute positioning", "G90")
+    gc("3. Select fuser, and advance to Part Bin start")
+    gc(  "Select fuser, but unlit", "T20 P0")
+    gc(  "Advance to Part Bin start", "G1 X%.3f F%d" % (X_BIN_PART, FEED_SPREAD))
+    gc("4. The fuser is enabled, and brought up to temp")
+    gc(  "Select fuser and temp", "T20 P%.3f" % (config['fuser_temp']))
+    gc(  "Wait for fuser to reach target temp", "M116 P20")
+    gc("5. Advance fuser to start of Waste Bin")
+    gc(  "Fuse and recoat...", "G1 X%.3f F%d" % (X_BIN_WASTE, FEED_FUSER))
+    gc("6. The fuser is disabled")
+    gc(  "Select recoat tool", "T21")
+    gc("7. Advance recoat blade to Waste Bin")
+    gc(  "Advance to waste bin", "G1 X%.3f F%d" % (X_BIN_WASTE, FEED_SPREAD))
+    gc("8. Drop Part Bin and Feed Bin by 1mm")
+    gc(  "Relative positioning", "G91")
+    gc(  "Drop bins by 1mm", "G1 E-1 Z1 F%d" % (FEED_POWDER))
+    gc(  "Absolute positioning", "G90")
+    gc("9. Move pen to end of the part bin")
+    gc(  "Select ink tool", "T1 P0")
+    gc(  "Move pen to end of the part bin", "G0 X%.3f" % (X_BIN_WASTE))
+    gc("10. Ink the layer")
+    # See brundle_layer()
 
+def brundle_layer_finish():
+    if not config['do_extrude']:
+        return
+
+    gc("11. Retract recoating blade to start of the Feed Bin")
+    gc(  "Select the recoating tool", "T21")
+    gc(  "Move to start", "G0 X%.3f Y0" % (X_BIN_FEED))
+    gc("12. The Feed Bin raises by 1mm,")
+    gc("    the Part Bin raises by 1mm")
+    gc(  "Relative positioning", "G91")
+    gc(  "Raise the bins", "G1 E1 Z-1 F%d" % (FEED_POWDER))
+    gc(  "Absolute positioning", "G90")
 
 def draw_path(cr, poly):
     x_shift = config['x_shift_mm']
@@ -284,11 +330,15 @@ def group_to_slice(layer, n, last_z_mm = None):
     surface.flush()
     if config['do_png']:
         surface.write_to_png("layer-%03d.png" % n)
-    if config['do_extrude'] and last_z_mm != None:
-        brundle_layer_finish(z_mm - last_z_mm)
-        brundle_layer_prep(z_mm - last_z_mm)
-    if config['do_layer']:
-        brundle_layer(w_dots, h_dots, surface, weave=config['do_weave'])
+
+    if last_z_mm == None:
+        layer_mm = 0
+    else:
+        layer_mm = z_mm - last_z_mm
+
+    brundle_layer_prep(layer_mm, layer_mm)
+    brundle_layer(w_dots, h_dots, surface, weave=config['do_weave'])
+    brundle_layer_finish()
 
     return z_mm
 
@@ -448,9 +498,9 @@ def main():
         z_mm = group_to_slice(layer, n, last_z_mm)
         n = n + 1
 
-    # Finish the last layer
-    if config['do_extrude']:
-        brundle_layer_finish(z_mm - last_z_mm)
+    # Fuse top layer
+    brundle_layer_prep(0, 1)
+    brundle_layer_finish()
 
 
 if __name__ == "__main__":
