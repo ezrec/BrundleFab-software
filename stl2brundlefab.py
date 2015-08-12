@@ -98,7 +98,7 @@ X_BIN_WASTE=385     # Start of the waste bin
 
 X_OFFSET_RECOAT=0   # Offset of the recoater blade
 X_OFFSET_FUSER=60   # Offset of midpoint of fuser
-X_OFFSET_PEN=160    # Offset of the pen
+X_OFFSET_PEN=195    # Offset of the pen
 
 FEED_SPREAD=3000    # Spread rate while depositing the layer
 FEED_INK=4          # Number of sprays per dotline
