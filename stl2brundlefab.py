@@ -220,48 +220,57 @@ def brundle_layer(w_dots, h_dots, surface, weave=True):
         y = y - Y_DOTS
 
 def brundle_layer_prep(e_delta_mm, z_delta_mm):
-    if not config['do_extrude']:
-        return
-
     gc("1. Assume layer head is at feed start")
-    gc("2. Raise Feed Bin by one layer width, lower Part bin")
-    gc(  "Relative positioning", "G91")
-    gc(  "Extrude a feed layer", "G1 E%.3f Z%.3f F%d" % (e_delta_mm, z_delta_mm, FEED_POWDER))
-    gc(  "Absolute positioning", "G90")
-    gc("3. Select fuser, and advance to Part Bin start")
-    gc(  "Select fuser, but unlit", "T20 P0")
-    gc(  "Advance to Part Bin start", "G1 X%.3f F%d" % (X_BIN_PART, FEED_SPREAD))
-    gc("4. The fuser is enabled, and brought up to temp")
-    gc(  "Select fuser and temp", "T20 P%.3f" % (config['fuser_temp']))
-    gc(  "Wait for fuser to reach target temp", "M116 P20")
-    gc("5. Advance fuser to start of Waste Bin")
-    gc(  "Fuse and recoat...", "G1 X%.3f F%d" % (X_BIN_WASTE, FEED_FUSER))
-    gc("6. The fuser is disabled")
     gc(  "Select recoat tool", "T21")
-    gc("7. Advance recoat blade to Waste Bin")
-    gc(  "Advance to waste bin", "G1 X%.3f F%d" % (X_BIN_WASTE, FEED_SPREAD))
-    gc("8. Drop Part Bin and Feed Bin by 1mm")
-    gc(  "Relative positioning", "G91")
-    gc(  "Drop bins by 1mm", "G1 E-1 Z1 F%d" % (FEED_POWDER))
-    gc(  "Absolute positioning", "G90")
-    gc("9. Move pen to end of the part bin")
-    gc(  "Select ink tool", "T1 P0")
-    gc(  "Move pen to end of the part bin", "G0 X%.3f" % (X_BIN_WASTE))
-    gc("10. Ink the layer")
-    # See brundle_layer()
+
+    if config['do_extrude']:
+        gc("2. Raise Feed Bin by one layer width, lower Part bin")
+        gc(  "Relative positioning", "G91")
+        gc(  "Extrude a feed layer", "G1 E%.3f Z%.3f F%d" % (e_delta_mm, z_delta_mm, FEED_POWDER))
+        gc(  "Absolute positioning", "G90")
+
+    if config['do_fuser']:
+        gc("3. Select fuser, and advance to Part Bin start")
+        gc(  "Select fuser, but unlit", "T20 P0")
+        gc(  "Advance to Part Bin start", "G1 X%.3f F%d" % (X_BIN_PART, FEED_SPREAD))
+        gc("4. The fuser is enabled, and brought up to temp")
+        gc(  "Select fuser and temp", "T20 P%.3f" % (config['fuser_temp']))
+        gc(  "Wait for fuser to reach target temp", "M116 P20")
+        feed = FEED_SPREAD
+        if FEED_FUSER < feed:
+            feed = FEED_FUSER
+
+        gc("5. Advance fuser to start of Waste Bin")
+        gc(  "Fuse and recoat...", "G1 X%.3f F%d" % (X_BIN_WASTE, feed))
+        gc("6. The fuser is disabled")
+        gc(  "Select recoat tool", "T21")
+
+    if config['do_extrude']:
+        gc("7. Advance recoat blade to Waste Bin")
+        gc(  "Advance to waste bin", "G1 X%.3f F%d" % (X_BIN_WASTE, FEED_SPREAD))
+        gc("8. Drop Part Bin and Feed Bin by 1mm")
+        gc(  "Relative positioning", "G91")
+        gc(  "Drop bins by 1mm", "G1 E-1 Z1 F%d" % (FEED_POWDER))
+        gc(  "Absolute positioning", "G90")
+
+    if config['do_layer']:
+        gc("9. Move pen to end of the part bin")
+        gc(  "Select ink tool", "T1 P0")
+        gc(  "Move pen to end of the part bin", "G0 X%.3f" % (X_BIN_WASTE))
+        gc("10. Ink the layer")
+        # See brundle_layer()
 
 def brundle_layer_finish():
-    if not config['do_extrude']:
-        return
-
     gc("11. Retract recoating blade to start of the Feed Bin")
     gc(  "Select the recoating tool", "T21")
     gc(  "Move to start", "G0 X%.3f Y0" % (X_BIN_FEED))
-    gc("12. The Feed Bin raises by 1mm,")
-    gc("    the Part Bin raises by 1mm")
-    gc(  "Relative positioning", "G91")
-    gc(  "Raise the bins", "G1 E1 Z-1 F%d" % (FEED_POWDER))
-    gc(  "Absolute positioning", "G90")
+
+    if config['do_extrude']:
+        gc("12. The Feed Bin raises by 1mm,")
+        gc("    the Part Bin raises by 1mm")
+        gc(  "Relative positioning", "G91")
+        gc(  "Raise the bins", "G1 E1 Z-1 F%d" % (FEED_POWDER))
+        gc(  "Absolute positioning", "G90")
 
 def draw_path(cr, poly):
     x_shift = config['x_shift_mm']
@@ -381,6 +390,7 @@ GCode output:
   -S, --no-startup      Do not generate GCode startup code
   -L, --no-layer        Do not generate layer inking commands
   -W, --no-weave        Do not generate interweave commands
+  -F, --no-fuser        Do not generate fuser commands
   -E, --no-extrude      Do not generate E or Z axis commands
   -p, --png             Generate 'layer-XXX.png' files, one for each layer
 
@@ -396,6 +406,7 @@ def main():
     config['do_png'] = False
     config['do_startup'] = True
     config['do_layer'] = True
+    config['do_fuser'] = True
     config['do_extrude'] = True
     config['do_weave'] = True
     config['slicer'] = 'slic3r'
@@ -408,7 +419,7 @@ def main():
     units = 'mm'
 
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "EGhLps:SW", ["help","no-gcode","no-extrude","no-layer","png","no-startup","no-weave","slicer=","svg","x-offset=","y-offset=","z-slice=","scale=","fuser-temp=","units="])
+        opts, args = getopt.getopt(sys.argv[1:], "EFGhLps:SW", ["help","no-gcode","no-extrude","no-fuser","no-layer","png","no-startup","no-weave","slicer=","svg","x-offset=","y-offset=","z-slice=","scale=","fuser-temp=","units="])
     except getopt.GetoptError as err:
         print(err)
         usage()
@@ -422,12 +433,15 @@ def main():
             config['do_startup'] = False
         elif o in ("-E","--no-extrude"):
             config['do_extrude'] = False
+        elif o in ("-F","--no-fuser"):
+            config['do_fuser'] = False
         elif o in ("-L","--no-layer"):
             config['do_layer'] = False
         elif o in ("-G","--no-gcode"):
             config['do_startup'] = False
             config['do_layer'] = False
             config['do_extrude'] = False
+            config['do_fuser'] = False
         elif o in ("--no-weave"):
             config['do_weave'] = False
         elif o in ("-p","--png"):
