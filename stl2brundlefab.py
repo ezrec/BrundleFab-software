@@ -132,15 +132,23 @@ def brundle_prep(name, max_z_mm):
     gc("Set pen tool offset", "G10 L1 P1 X%.3f" % (X_OFFSET_PEN))
     gc("Set fuser tool offset", "G10 L1 P20 X%.3f" % (X_OFFSET_FUSER))
     gc("Set repowder blade offset", "G10 L1 P21 X%.3f" % (X_OFFSET_RECOAT))
+    gc("Ink spray rate (sprays/dot)", "T1 S%d" % (FEED_INK))
 
     gc(None, "M117 Ready to home")
     gc("Let the user make sure we're ready to home axes", "M0")
     gc("Home print axes", "G28 X0 Y0 E0")
     gc("NOTE: Z is _not_ homed, as it may be part of a multi-file print")
-    gc(None, "M117 Fill %dmm" % (int(max_z_mm)))
+
+    gc(None, "M117 Prep Part")
+    gc("Select the recoater tool", "T21")
+    gc("Move to start of the Waste Bin", "G0 X%.3f" % (X_BIN_WASTE))
+    gc("Wait for Z prep", "M0")
+
+    gc(None, "M117 Levelling")
+    gc("Move to start of the Part Bin", "G1 X%.3f F%.3f" % (X_BIN_PART, FEED_SPREAD))
+    gc(None, "M117 Feed %dmm" % (int(max_z_mm)+5))
     gc("Wait for manual fill operation", "M0")
     gc("Clear status message", "M117")
-    gc("Ink spray rate (sprays/dot)", "T1 S%d" % (FEED_INK))
 
     gc("Select repowder tool", "T21")
     gc("Move to feed start", "G1 X%.3f" % (X_BIN_FEED))
