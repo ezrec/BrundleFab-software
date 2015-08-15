@@ -169,8 +169,9 @@ def brundle_line(x_dots, w_dots, toolmask, weave=True):
     if origin == None:
         return
 
-    gc(None, "G1 X%.3f" % (X_BIN_PART + in2mm(x_dots / X_DPI)))
+    gc(None, "T0")
     gc(None, "T1 P0")
+    gc(None, "G1 X%.3f F%.3f" % (X_BIN_PART + in2mm(x_dots / X_DPI), FEED_PEN))
     gc(None, "G1 Y%.3f" % (in2mm(origin / Y_DPI)))
 
     for i in range(origin+1, w_dots):
@@ -185,17 +186,17 @@ def brundle_line(x_dots, w_dots, toolmask, weave=True):
     # inkbar, and the ink head will end up at the end of the
     # line.
     gc(None, "T0")
-    gc(None, "T1 P0")
 
     # For interweave support, we retract X by a half-dot, and
     # cover the dots inbetween the forward pass on the
     # reverse pass
     if weave:
-        gc(None, "G1 X%.3f" % (X_BIN_PART + in2mm((x_dots - 0.5) / X_DPI)))
+        gc(None, "G1 X%.3f F%.3f" % (X_BIN_PART + in2mm((x_dots - 0.5) / X_DPI), FEED_PEN))
 
     # Switch back to T1 to ink on the reverse movement of
     # then inkbar
-    gc(None, "G1 Y0")
+    gc(None, "T1 P0")
+    gc(None, "G0 Y0")
 
 
 # Note: h_dots _must_ be a multiple of Y_DOTS!
