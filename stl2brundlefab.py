@@ -101,17 +101,15 @@ X_OFFSET_FUSER=60   # Offset of midpoint of fuser
 X_OFFSET_PEN=195    # Offset of the pen
 
 FEED_SPREAD=3000    # Spread rate while depositing the layer
-FEED_INK=4          # Number of sprays per dotline
 FEED_POWDER=4500    # Extruder feed rate (mm/minute)
 FEED_FUSER=750     # Fuser pass rate (mm/minute)
+FEED_PEN=5000       # Pen movement (mm/minute)
 X_DPI=96.0
 Y_DPI=96.0
 
 Y_DOTS=12
 
 config = {}
-config['gcode_terse'] = False
-config['fuser_temp'] = 0.0      # Celsius
 
 def gc(comment, code = None):
     if config['gcode_terse']:
@@ -125,30 +123,33 @@ def gc(comment, code = None):
         print "; %s" % (comment)
     pass
 
-def brundle_prep(name, max_z_mm):
-    gc("Print %s to the BrundleFab" % name)
+def brundle_prep(name, max_z_mm, layers):
+    gc("Print %s to the BrundleFab, %dmm, %d layers" % (name, max_z_mm, layers))
     gc("Units are mm", "G21")
     gc("Absolute positioning", "G90")
-    gc("Set pen tool offset", "G10 L1 P1 X%.3f" % (X_OFFSET_PEN))
+    gc("Set pen base offset", "G10 L1 P0 X%.3f" % (X_OFFSET_PEN))
+    gc("Set black tool offset", "G10 L1 P1 X%.3f" % (X_OFFSET_PEN))
     gc("Set fuser tool offset", "G10 L1 P20 X%.3f" % (X_OFFSET_FUSER))
     gc("Set repowder blade offset", "G10 L1 P21 X%.3f" % (X_OFFSET_RECOAT))
-    gc("Ink spray rate (sprays/dot)", "T1 S%d" % (FEED_INK))
+    gc("Ink spray rate (sprays/dot)", "T1 S%d" % (config['sprays']))
+    gc("Re-home the ink head", "G28 Y0")
 
-    gc(None, "M117 Ready to home")
-    gc("Let the user make sure we're ready to home axes", "M0")
-    gc("Home print axes", "G28 X0 Y0 E0")
-    gc("NOTE: Z is _not_ homed, as it may be part of a multi-file print")
+    if config['do_startup']:
+        gc(None, "M117 Ready to home")
+        gc("Let the user make sure we're ready to home axes", "M0")
+        gc("Home print axes", "G28 X0 Y0 E0")
+        gc("NOTE: Z is _not_ homed, as it may be part of a multi-file print")
 
-    gc(None, "M117 Prep Part")
-    gc("Select the recoater tool", "T21")
-    gc("Move to start of the Waste Bin", "G0 X%.3f" % (X_BIN_WASTE))
-    gc("Wait for Z prep", "M0")
+        gc(None, "M117 Prep Part")
+        gc("Select the recoater tool", "T21")
+        gc("Move to start of the Waste Bin", "G0 X%.3f" % (X_BIN_WASTE))
+        gc("Wait for Z prep", "M0")
 
-    gc(None, "M117 Levelling")
-    gc("Move to start of the Part Bin", "G1 X%.3f F%.3f" % (X_BIN_PART, FEED_SPREAD))
-    gc(None, "M117 Feed %dmm" % (int(max_z_mm)+5))
-    gc("Wait for manual fill operation", "M0")
-    gc("Clear status message", "M117")
+        gc(None, "M117 Levelling")
+        gc("Move to start of the Part Bin", "G1 X%.3f F%.3f" % (X_BIN_PART, FEED_SPREAD))
+        gc(None, "M117 Feed %dmm" % (int(max_z_mm)+5))
+        gc("Wait for manual fill operation", "M0")
+        gc("Clear status message", "M117")
 
     gc("Select repowder tool", "T21")
     gc("Move to feed start", "G1 X%.3f" % (X_BIN_FEED))
@@ -231,11 +232,11 @@ def brundle_layer_prep(e_delta_mm, z_delta_mm):
 
     if config['do_fuser']:
         gc("3. Select fuser, and advance to Part Bin start")
-        gc(  "Select fuser, but unlit", "T20 P0")
+        gc(  "Select fuser, but unlit", "T20 P0 Q0")
         gc(  "Advance to Part Bin start", "G1 X%.3f F%d" % (X_BIN_PART, FEED_SPREAD))
         gc("4. The fuser is enabled, and brought up to temp")
-        gc(  "Select fuser and temp", "T20 P%.3f" % (config['fuser_temp']))
-        gc(  "Wait for fuser to reach target temp", "M116 P20")
+        gc(  "Select fuser and temp", "T20 P%.3f Q%.3f" % (config['fuser_temp']+5, config['fuser_temp']-5))
+        #gc(  "Wait for fuser to reach target temp", "M116 P20")
         feed = FEED_SPREAD
         if FEED_FUSER < feed:
             feed = FEED_FUSER
@@ -397,6 +398,9 @@ GCode output:
 """
 
 def main():
+    config['gcode_terse'] = False
+    config['fuser_temp'] = 0.0      # Celsius
+    config['sprays'] = 1            # Sprays per pixel
     config['x_bound_mm'] = 200.0
     config['y_bound_mm'] = 200.0
     config['x_shift_mm'] = 0.0
@@ -419,7 +423,14 @@ def main():
     units = 'mm'
 
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "EFGhLps:SW", ["help","no-gcode","no-extrude","no-fuser","no-layer","png","no-startup","no-weave","slicer=","svg","x-offset=","y-offset=","z-slice=","scale=","fuser-temp=","units="])
+        opts, args = getopt.getopt(sys.argv[1:], "EFGhLo:ps:SW", [
+                "help",
+                "no-gcode","no-startup","no-extrude","no-fuser","no-layer",
+                "png",
+                "slicer=","svg","units=",
+                "x-offset=","y-offset=","z-slice=","scale=",
+                "no-weave","overspray=",
+                "fuser-temp="])
     except getopt.GetoptError as err:
         print(err)
         usage()
@@ -442,7 +453,7 @@ def main():
             config['do_layer'] = False
             config['do_extrude'] = False
             config['do_fuser'] = False
-        elif o in ("--no-weave"):
+        elif o in ("-W","--no-weave"):
             config['do_weave'] = False
         elif o in ("-p","--png"):
             config['do_png'] = True
@@ -458,6 +469,8 @@ def main():
             config['z_slice_mm'] = float(a) * unit[units]
         elif o in ("--scale"):
             config['scale'] = float(a)
+        elif o in ("-o","--overspray"):
+            config['sprays'] = int(a)
         elif o in ("--fuser-temp"):
             config['fuser_temp'] = float(a)
         elif o in ("--units"):
@@ -512,11 +525,12 @@ def main():
     svg = minidom.parse(svg_file)
 
     max_z_mm = None
+    n = 0
     for layer in svg.getElementsByTagName("g"):
         max_z_mm = group_z(layer)
+        n = n + 1
 
-    if config['do_startup']:
-        brundle_prep(args[0], max_z_mm)
+    brundle_prep(args[0], max_z_mm, n)
 
     last_z_mm = None
     z_mm = None
