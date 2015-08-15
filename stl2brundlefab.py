@@ -102,7 +102,7 @@ X_OFFSET_PEN=195    # Offset of the pen
 
 FEED_SPREAD=3000    # Spread rate while depositing the layer
 FEED_POWDER=4500    # Extruder feed rate (mm/minute)
-FEED_FUSER=750     # Fuser pass rate (mm/minute)
+FEED_FUSER=500      # Fuser pass rate (mm/minute)
 FEED_PEN=5000       # Pen movement (mm/minute)
 X_DPI=96.0
 Y_DPI=96.0
