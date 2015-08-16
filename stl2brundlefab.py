@@ -59,7 +59,7 @@
 #
 # 1. The layer head begins at the minimum X position, positioning
 #    the repowder blade at the start of the Feed Bin
-# 2. The Feed Bin raises by one layer width, Part Bin lowers by one width
+# 2. The Feed Bin raises by one layer width
 # 3. The layer head advances in X until the the fuser (F) is at the start
 #    at the start of Part Bin.
 # 4. The fuser is enabled, and brought up to temperature.
@@ -68,7 +68,8 @@
 # 6. The fuser is disabled.
 # 7. The layer head advances in X, until the repowder blade (R) is at the
 #    start of the Waste Bin
-# 8. The Part Bin (Z) and the Feed Bin (E) both drop by 1mm.
+# 8. The Part Bin (Z) drops by the next layer width, and the Feed Bin (E)
+#    drops by 2mm.
 #    This is needed so that the repowder blade will not disturb the existing
 #    powder layer during the inking pass.
 # 9. The layer head retracts in X until the ink head (H) is at the end
@@ -78,7 +79,7 @@
 # 11.The layer head is fully retraced.
 #    This will position the repowder blade (R) at the start of the powder
 #    feed bin.
-# 12.The Feed Bin raises by 1mm, the Part Bin raises by 1mm
+# 12.The Feed Bin raises by 2mm
 #
 # Repeat steps 1 - 12 for all layers. A final 'no ink' layer is inserted
 # after the last printed layer to ensure compete fusing.
@@ -100,9 +101,10 @@ X_OFFSET_RECOAT=0   # Offset of the recoater blade
 X_OFFSET_FUSER=60   # Offset of midpoint of fuser
 X_OFFSET_PEN=195    # Offset of the pen
 
+FEED_RETRACT=2.0    # E retraction, in mm
 FEED_SPREAD=3000    # Spread rate while depositing the layer
 FEED_POWDER=4500    # Extruder feed rate (mm/minute)
-FEED_FUSER=500      # Fuser pass rate (mm/minute)
+FEED_FUSER=250      # Fuser pass rate (mm/minute)
 FEED_PEN=5000       # Pen movement (mm/minute)
 X_DPI=96.0
 Y_DPI=96.0
@@ -226,9 +228,9 @@ def brundle_layer_prep(e_delta_mm, z_delta_mm):
     gc(  "Select recoat tool", "T21")
 
     if config['do_extrude']:
-        gc("2. Raise Feed Bin by one layer width, lower Part bin")
+        gc("2. Raise Feed Bin by one layer width")
         gc(  "Relative positioning", "G91")
-        gc(  "Extrude a feed layer", "G1 E%.3f Z%.3f F%d" % (e_delta_mm, z_delta_mm, FEED_POWDER))
+        gc(  "Extrude a feed layer", "G1 E%.3f F%d" % (e_delta_mm, FEED_POWDER))
         gc(  "Absolute positioning", "G90")
 
     if config['do_fuser']:
@@ -250,9 +252,9 @@ def brundle_layer_prep(e_delta_mm, z_delta_mm):
     if config['do_extrude']:
         gc("7. Advance recoat blade to Waste Bin")
         gc(  "Advance to waste bin", "G1 X%.3f F%d" % (X_BIN_WASTE, FEED_SPREAD))
-        gc("8. Drop Part Bin and Feed Bin by 1mm")
+        gc("8. Drop Part Bin by next layer width, and Feed Bin by 1mm")
         gc(  "Relative positioning", "G91")
-        gc(  "Drop bins by 1mm", "G1 E-1 Z1 F%d" % (FEED_POWDER))
+        gc(  "Drop bins to get out of the way", "G1 E%.3f Z%.3f F%d" % (-FEED_RETRACT, z_delta_mm, FEED_POWDER))
         gc(  "Absolute positioning", "G90")
 
     if config['do_layer']:
@@ -268,10 +270,9 @@ def brundle_layer_finish():
     gc(  "Move to start", "G0 X%.3f Y0" % (X_BIN_FEED))
 
     if config['do_extrude']:
-        gc("12. The Feed Bin raises by 1mm,")
-        gc("    the Part Bin raises by 1mm")
+        gc("12. The Feed Bin raises by 1mm")
         gc(  "Relative positioning", "G91")
-        gc(  "Raise the bins", "G1 E1 Z-1 F%d" % (FEED_POWDER))
+        gc(  "Raise the bins", "G1 E%.3f F%d" % (FEED_RETRACT, FEED_POWDER))
         gc(  "Absolute positioning", "G90")
 
 def draw_path(cr, poly):
@@ -305,7 +306,7 @@ def group_z(layer):
         z_mm = float(label[1])
     return z_mm
 
-def group_to_slice(layer, n, last_z_mm = None):
+def group_to_slice(layer, n, this_layer_mm = None, next_layer_mm = None):
     # Create a new cairo surface
     w_dots = int(mm2in(config['y_bound_mm']) * Y_DPI)
     h_dots = int(mm2in(config['x_bound_mm']) * X_DPI)
@@ -317,7 +318,6 @@ def group_to_slice(layer, n, last_z_mm = None):
     cr = cairo.Context(surface)
     cr.set_antialias(cairo.ANTIALIAS_NONE)
 
-    z_mm = group_z(layer)
     i = 0
     contours = []
     holes = []
@@ -355,16 +355,9 @@ def group_to_slice(layer, n, last_z_mm = None):
     if config['do_png']:
         surface.write_to_png("layer-%03d.png" % n)
 
-    if last_z_mm == None:
-        layer_mm = 0
-    else:
-        layer_mm = z_mm - last_z_mm
-
-    brundle_layer_prep(layer_mm, layer_mm)
+    brundle_layer_prep(this_layer_mm, next_layer_mm)
     brundle_layer(w_dots, h_dots, surface, weave=config['do_weave'])
     brundle_layer_finish()
-
-    return z_mm
 
 def usage():
     print """
@@ -526,19 +519,28 @@ def main():
     svg = minidom.parse(svg_file)
 
     max_z_mm = None
+    z_mm = []
     n = 0
     for layer in svg.getElementsByTagName("g"):
         max_z_mm = group_z(layer)
+        z_mm.append(max_z_mm)
         n = n + 1
 
+    n_total = n
     brundle_prep(args[0], max_z_mm, n)
 
-    last_z_mm = None
-    z_mm = None
     n = 0
     for layer in svg.getElementsByTagName("g"):
-        last_z_mm = z_mm
-        z_mm = group_to_slice(layer, n, last_z_mm)
+        gc(None, "M117 Slice %d of %d" % ((n+1), n_total))
+        if n > 1:
+            this_layer_mm = z_mm[n] - z_mm[n - 1]
+        else:
+            this_layer_mm = 1
+        if n < (len(z_mm) - 1):
+            next_layer_mm = z_mm[n + 1] - z_mm[n]
+        else:
+            next_layer_mm = 1
+        group_to_slice(layer, n, this_layer_mm, next_layer_mm)
         n = n + 1
 
     # Fuse top layer
