@@ -104,7 +104,9 @@ X_OFFSET_PEN=195    # Offset of the pen
 FEED_RETRACT=2.0    # E retraction, in mm
 FEED_SPREAD=3000    # Spread rate while depositing the layer
 FEED_POWDER=4500    # Extruder feed rate (mm/minute)
-FEED_FUSER=250      # Fuser pass rate (mm/minute)
+FEED_FUSER_WARM=200 # Fuser pass rate during warm-up (mm/minute)
+TIME_FUSER_WARM=6   # Time (in seconds) for fuser to complete its warm-up
+FEED_FUSER_HOT=300  # Fuser pass rate during hot (mm/minute)
 FEED_PEN=5000       # Pen movement (mm/minute)
 X_DPI=96.0
 Y_DPI=96.0
@@ -239,13 +241,11 @@ def brundle_layer_prep(e_delta_mm, z_delta_mm):
         gc(  "Advance to Part Bin start", "G1 X%.3f F%d" % (X_BIN_PART, FEED_SPREAD))
         gc("4. The fuser is enabled, and brought up to temp")
         gc(  "Select fuser and temp", "T20 P%.3f Q%.3f" % (config['fuser_temp']+5, config['fuser_temp']-5))
-        #gc(  "Wait for fuser to reach target temp", "M116 P20")
-        feed = FEED_SPREAD
-        if FEED_FUSER < feed:
-            feed = FEED_FUSER
 
         gc("5. Advance fuser to start of Waste Bin")
-        gc(  "Fuse and recoat...", "G1 X%.3f F%d" % (X_BIN_WASTE, feed))
+        x_warm_mm = FEED_FUSER_WARM * TIME_FUSER_WARM / 60
+        gc(  "Fuser warm-up and recoat", "G1 X%.3f F%d" % (X_BIN_PART + x_warm_mm, FEED_FUSER_WARM))
+        gc(  "Fuse and recoat...", "G1 X%.3f F%d" % (X_BIN_WASTE, FEED_FUSER_HOT))
         gc("6. The fuser is disabled")
         gc(  "Select recoat tool", "T21")
 
