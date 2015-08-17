@@ -144,8 +144,8 @@ def brundle_prep(name, max_z_mm, layers):
 
         gc(None, "M117 Prep Part")
         gc("Select the recoater tool", "T21")
-        gc("Move to start of the Waste Bin", "G0 X%.3f" % (X_BIN_WASTE))
         gc("Wait for Z prep", "M0")
+        gc("Move to start of the Waste Bin", "G0 X%.3f" % (X_BIN_WASTE))
 
         gc(None, "M117 Levelling")
         gc("Move to start of the Part Bin", "G1 X%.3f F%.3f" % (X_BIN_PART, FEED_SPREAD))
