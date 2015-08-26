@@ -116,6 +116,9 @@ Y_DOTS=12
 config = {}
 
 def gc(comment, code = None):
+    if not config['do_gcode']:
+        return
+
     if config['gcode_terse']:
         comment = None
 
@@ -402,6 +405,7 @@ def main():
     config['z_slice_mm'] = 0.5
     config['scale'] = 1.0
     config['do_png'] = False
+    config['do_gcode'] = True
     config['do_startup'] = True
     config['do_layer'] = True
     config['do_fuser'] = True
@@ -443,10 +447,7 @@ def main():
         elif o in ("-L","--no-layer"):
             config['do_layer'] = False
         elif o in ("-G","--no-gcode"):
-            config['do_startup'] = False
-            config['do_layer'] = False
-            config['do_extrude'] = False
-            config['do_fuser'] = False
+            config['do_gcode'] = False
         elif o in ("-W","--no-weave"):
             config['do_weave'] = False
         elif o in ("-p","--png"):
