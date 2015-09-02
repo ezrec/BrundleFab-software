@@ -97,7 +97,8 @@ X_BIN_PART=198      # Start of the part bin
 X_BIN_WASTE=385     # Start of the waste bin
 
 X_OFFSET_RECOAT=0   # Offset of the recoater blade
-X_OFFSET_FUSER=60   # Offset of midpoint of fuser
+X_OFFSET_FUSER=45   # Offset of midpoint of fuser
+X_OFFSET_THERM=95   # Offset of midpoint of thermal sensor
 X_OFFSET_PEN=195    # Offset of the pen
 
 FEED_RETRACT=2.0    # E retraction, in mm
@@ -105,7 +106,7 @@ FEED_SPREAD=3000    # Spread rate while depositing the layer
 FEED_POWDER=4500    # Extruder feed rate (mm/minute)
 FEED_FUSER_WARM=200 # Fuser pass rate during warm-up (mm/minute)
 TIME_FUSER_WARM=6   # Time (in seconds) for fuser to complete its warm-up
-FEED_FUSER_HOT=300  # Fuser pass rate during hot (mm/minute)
+FEED_FUSER_HOT=700  # Fuser pass rate during hot (mm/minute)
 FEED_PEN=5000       # Pen movement (mm/minute)
 X_DPI=96.0
 Y_DPI=96.0
@@ -394,7 +395,7 @@ GCode output:
 def main():
     config['gcode_terse'] = False
     config['fuser_temp'] = 0.0      # Celsius
-    config['sprays'] = 1            # Sprays per pixel
+    config['sprays'] = 6            # Sprays per pixel
     config['x_bound_mm'] = 200.0
     config['y_bound_mm'] = 200.0
     config['x_shift_mm'] = 0.0
