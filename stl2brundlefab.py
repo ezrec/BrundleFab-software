@@ -60,29 +60,28 @@
 # 1. The layer head begins at the minimum X position, positioning
 #    the repowder blade at the start of the Feed Bin
 # 2. The Feed Bin raises by one layer width
-# 3. The layer head advances in X until the the fuser (F) is at the start
-#    at the start of Part Bin.
-# 4. The fuser is enabled, and brought up to temperature.
-# 5. The layer head advances in X, depositing fresh powder onto the newly
-#    fused layer, until the the fuser (F) is at the start of the Waste Bin
-# 6. The fuser is disabled.
-# 7. The layer head advances in X, until the repowder blade (R) is at the
-#    start of the Waste Bin
-# 8. The Part Bin (Z) drops by the next layer width, and the Feed Bin (E)
+# 3. The layer head advances in X, until the repowder blade (R) is at the
+#    start of the Waste Bin, depositing powder as it advances.
+# 4. The Part Bin (Z) drops by 2mm, and the Feed Bin (E)
 #    drops by 2mm.
 #    This is needed so that the repowder blade will not disturb the existing
 #    powder layer during the inking pass.
-# 9. The layer head retracts in X until the ink head (H) is at the end
+# 5. The layer head retracts in X until the ink head (H) is at the end
 #    of the Part Bin.
-# 10.The ink deposition phase then begins, depositing ink on the
+# 6.The ink deposition phase then begins, depositing ink on the
 #    fresh powder layer, as the layer head retracts in X.
-# 11.The layer head is fully retraced.
+# 7. The layer head retacts in X until the the fuser (F) is at the start
+#    at the start of Part Bin.
+# 8. The fuser is enabled, and slowly advances in X during warm up
+# 9. The layer head advances in X until the the fuser (F) is at the
+#    start of the Waste Bin
+# 10. The fuser is disabled.
+# 11.The layer head is fully retracted.
 #    This will position the repowder blade (R) at the start of the powder
 #    feed bin.
 # 12.The Feed Bin raises by 2mm
 #
-# Repeat steps 1 - 12 for all layers. A final 'no ink' layer is inserted
-# after the last printed layer to ensure compete fusing.
+# Repeat steps 1 - 12 for all layers.
 
 import re
 import sys
@@ -138,6 +137,7 @@ def brundle_prep(name, max_z_mm, layers):
     gc("Set black tool offset", "G10 L1 P1 X%.3f" % (X_OFFSET_PEN))
     gc("Set fuser tool offset", "G10 L1 P20 X%.3f" % (X_OFFSET_FUSER))
     gc("Set repowder blade offset", "G10 L1 P21 X%.3f" % (X_OFFSET_RECOAT))
+    gc("Set thermal monitor tool offset", "G10 L1 P22 X%.3f" % (X_OFFSET_THERM))
     gc("Ink spray rate (sprays/dot)", "T1 S%d" % (config['sprays']))
     gc("Re-home the ink head", "G28 Y0")
 
@@ -216,19 +216,16 @@ def brundle_layer(w_dots, h_dots, surface, weave=True):
     image = numpy.reshape(image, (stride, h_dots))
     image = numpy.greater(image, 0)
 
-    # Issue the printbars in reverse order, since
-    # we are drawing in the negiative X direction
-    y = h_dots - Y_DOTS
+    y = 0
     dotlines = numpy.vsplit(image, h_dots/Y_DOTS)
-    list.reverse(dotlines)
     for dotline in dotlines:
         toolmask = numpy.zeros((stride))
         for l in range(0, Y_DOTS):
             toolmask = toolmask + dotline[l]*(1 << l)
         brundle_line(y, w_dots, toolmask, weave)
-        y = y - Y_DOTS
+        y = y + Y_DOTS
 
-def brundle_layer_prep(e_delta_mm, z_delta_mm):
+def brundle_layer_prep(e_delta_mm):
     gc("1. Assume layer head is at feed start")
     gc(  "Select recoat tool", "T21")
 
@@ -238,44 +235,44 @@ def brundle_layer_prep(e_delta_mm, z_delta_mm):
         gc(  "Extrude a feed layer", "G1 E%.3f F%d" % (e_delta_mm, FEED_POWDER))
         gc(  "Absolute positioning", "G90")
 
-    if config['do_fuser']:
-        gc("3. Select fuser, and advance to Part Bin start")
-        gc(  "Select fuser, but unlit", "T20 P0 Q0")
-        gc(  "Advance to Part Bin start", "G1 X%.3f F%d" % (X_BIN_PART, FEED_SPREAD))
-        gc("4. The fuser is enabled, and brought up to temp")
-        gc(  "Select fuser and temp", "T20 P%.3f Q%.3f" % (config['fuser_temp']+5, config['fuser_temp']-5))
-
-        gc("5. Advance fuser to start of Waste Bin")
-        x_warm_mm = FEED_FUSER_WARM * TIME_FUSER_WARM / 60
-        gc(  "Fuser warm-up and recoat", "G1 X%.3f F%d" % (X_BIN_PART + x_warm_mm, FEED_FUSER_WARM))
-        gc(  "Fuse and recoat...", "G1 X%.3f F%d" % (X_BIN_WASTE, FEED_FUSER_HOT))
-        gc("6. The fuser is disabled")
-        gc(  "Select recoat tool", "T21")
-
-    if config['do_extrude']:
-        gc("7. Advance recoat blade to Waste Bin")
-        gc(  "Advance to waste bin", "G1 X%.3f F%d" % (X_BIN_WASTE, FEED_SPREAD))
-        gc("8. Drop Part Bin by next layer width, and Feed Bin by 1mm")
+        gc("3. Advance recoat blade past Waste Bin")
+        gc(  "Advance to waste bin", "G1 X%.3f F%d" % (X_BIN_WASTE+15, FEED_SPREAD))
+        gc("4. Drop Part Bin by %.3fmm, and Feed Bin by %.3fmm" % (FEED_RETRACT, FEED_RETRACT))
         gc(  "Relative positioning", "G91")
-        gc(  "Drop bins to get out of the way", "G1 E%.3f Z%.3f F%d" % (-FEED_RETRACT, z_delta_mm, FEED_POWDER))
+        gc(  "Drop bins to get out of the way", "G1 E%.3f Z%.3f F%d" % (-FEED_RETRACT, FEED_RETRACT, FEED_POWDER))
         gc(  "Absolute positioning", "G90")
 
     if config['do_layer']:
-        gc("9. Move pen to end of the part bin")
+        gc("5. Move pen to start of the part bin")
         gc(  "Select ink tool", "T1 P0")
-        gc(  "Move pen to end of the part bin", "G0 X%.3f" % (X_BIN_WASTE))
-        gc("10. Ink the layer")
+        gc(  "Move pen to end of the part bin", "G0 X%.3f" % (X_BIN_PART))
+        gc("6. Ink the layer")
         # See brundle_layer()
 
-def brundle_layer_finish():
+def brundle_layer_finish(z_delta_mm):
+    if config['do_fuser']:
+        gc("7. Select fuser, and advance to Waste Bin start")
+        gc(  "Select fuser, but unlit", "T20 P0 Q0")
+        x_warm_delta_mm = FEED_FUSER_WARM * TIME_FUSER_WARM / 60
+        gc(  "Advance to Waste Bin start + warm up", "G0 X%.3f" % (X_BIN_WASTE + x_warm_delta_mm+50))
+        gc("8. The fuser is enabled, and brought up to temp")
+        gc(  "Select fuser and temp", "T20 P%.3f Q%.3f" % (config['fuser_temp']+5, config['fuser_temp']-5))
+
+        gc("9. Retract fuser to start of Part Bin")
+        gc(  "Fuser warm-up", "G1 X%.3f F%d" % (X_BIN_WASTE+50, FEED_FUSER_WARM))
+        for delta in range(0, int(X_BIN_WASTE - X_BIN_PART)/10):
+            gc(  "Fuse ..", "G1 X%.3f F%d" % (X_BIN_WASTE - delta*10, FEED_FUSER_HOT))
+        gc(  "Fuse ..", "G1 X%.3f F%d" % (X_BIN_PART, FEED_FUSER_HOT))
+        gc("10. The fuser is disabled", "T20 P0 Q0")
+
     gc("11. Retract recoating blade to start of the Feed Bin")
     gc(  "Select the recoating tool", "T21")
     gc(  "Move to start", "G0 X%.3f Y0" % (X_BIN_FEED))
 
     if config['do_extrude']:
-        gc("12. The Feed Bin raises by 1mm")
+        gc("12. The Feed Bin and Part bin raises by %.3fmm" % FEED_RETRACT)
         gc(  "Relative positioning", "G91")
-        gc(  "Raise the bins", "G1 E%.3f F%d" % (FEED_RETRACT, FEED_POWDER))
+        gc(  "Raise the bins", "G1 E%.3f Z%.3f F%d" % (FEED_RETRACT, z_delta_mm - FEED_RETRACT, FEED_POWDER))
         gc(  "Absolute positioning", "G90")
 
 def draw_path(cr, poly):
@@ -358,9 +355,9 @@ def group_to_slice(layer, n, this_layer_mm = None, next_layer_mm = None):
     if config['do_png']:
         surface.write_to_png("layer-%03d.png" % n)
 
-    brundle_layer_prep(this_layer_mm, next_layer_mm)
+    brundle_layer_prep(this_layer_mm)
     brundle_layer(w_dots, h_dots, surface, weave=config['do_weave'])
-    brundle_layer_finish()
+    brundle_layer_finish(next_layer_mm)
 
 def usage():
     print """
@@ -543,11 +540,6 @@ def main():
             next_layer_mm = 1
         group_to_slice(layer, n, this_layer_mm, next_layer_mm)
         n = n + 1
-
-    # Fuse top layer
-    brundle_layer_prep(0, 1)
-    brundle_layer_finish()
-
 
 if __name__ == "__main__":
     main()
