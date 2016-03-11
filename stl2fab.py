@@ -23,70 +23,12 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 #
-############################ Theory of Operation ###########################
-#
-# This program takes as input a STL 3D object file, and emits GCode
-# suitable for input to the BrundleFab thermal fusing powderbed printer.
-#
-# The BrundleFab has a Y axis carriage with a combined ink head, thermal
-# fuser, and repowder blade, herein called the 'layer head'.
-#
-# The layer head completely covers the feed bin, and can be used to preserve
-# powder quality between prints.
-#           ___
-#          /   T
-#       __/_ F _\__________oH
-#    ||/ <-R          S-> \ H                                      ||
-#    ||-------------------||-------------------||                  ||
-#    ||    Feed Bin       ||    Part Bin       ||    Waste Bin     ||
-#    ||                   ||===================||                  ||
-#    ||===================||         ::        ||                  ||
-#    ||       E :: Axis   ||       Z :: Axis   ||                  ||
-#
-#  Key:
-#
-#    || - Wall of the powder chambers
-#    -- - Top of the feed/part powder layers
-#    == - Top of the feed/part pistons
-#    F  - Thermal fuser (halogen bulb)
-#    T  - Thermal sensor
-#    R  - Recoating blade
-#    S  - Powder sealing blade
-#    H  - Ink head
-#    o  - Ink head rail
-#
-# A BrundleFab layer is constructed as follows:
-#
-# 1. The layer head begins at the minimum X position, positioning
-#    the repowder blade at the start of the Feed Bin
-# 2. The Feed Bin raises by one layer width
-# 3. The layer head advances in X, until the repowder blade (R) is at the
-#    start of the Waste Bin, depositing powder as it advances.
-# 4. The Part Bin (Z) drops by 2mm, and the Feed Bin (E)
-#    drops by 2mm.
-#    This is needed so that the repowder blade will not disturb the existing
-#    powder layer during the inking pass.
-# 5. The layer head retracts in X until the ink head (H) is at the end
-#    of the Part Bin.
-# 6.The ink deposition phase then begins, depositing ink on the
-#    fresh powder layer, as the layer head retracts in X.
-# 7. The layer head retacts in X until the the fuser (F) is at the start
-#    at the start of Part Bin.
-# 8. The fuser is enabled, and slowly advances in X during warm up
-# 9. The layer head advances in X until the the fuser (F) is at the
-#    start of the Waste Bin
-# 10. The fuser is disabled.
-# 11.The layer head is fully retracted.
-#    This will position the repowder blade (R) at the start of the powder
-#    feed bin.
-# 12.The Feed Bin raises by 2mm
-#
-# Repeat steps 1 - 12 for all layers.
 
-import re
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
 import sys
-import cairo
-import numpy
 import getopt
 import tempfile
 import subprocess
@@ -94,6 +36,14 @@ from xml.dom import minidom
 
 import fab
 import fab.brundle
+import fab.posjet
+import fab.tmc600
+
+fabricator = {
+        'brundle': fab.brundle,
+        'posjet' : fab.posjet,
+        'tmc600' : fab.tmc600,
+        }
 
 def usage():
     print("""
@@ -113,6 +63,16 @@ Transformation:
   --x-offset N          Add a X offset (in mm) to the layers
   --y-offset N          Add a Y offset (in mm) to the layers
 
+Output:
+  -f, --fab=SYSTEM      Fabrication system (bundle,posjet,tmc600)
+
+Debug:
+  --log=LOGFILE         Annotated logfile of the emitted commands
+  -p, --png             Generate 'layer-XXX.png' files, one for each layer
+
+BrundleFab Specific
+===================
+
 Fuser control:
   --fuser-temp N        Temperature of the fuser (at heat shield), in C.
 
@@ -123,7 +83,6 @@ GCode output:
   -W, --no-weave        Do not generate interweave commands
   -F, --no-fuser        Do not generate fuser commands
   -E, --no-extrude      Do not generate E or Z axis commands
-  -p, --png             Generate 'layer-XXX.png' files, one for each layer
 
 """)
     pass
@@ -156,11 +115,15 @@ def main(out = None, log = None):
 
     units = 'mm'
 
+    fabtype = 'brundle'
+
+    logfile = None
+
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "EFGhLo:ps:SW", [
+        opts, args = getopt.getopt(sys.argv[1:], "EFGhLf:o:ps:SW", [
                 "help",
                 "no-gcode","no-startup","no-extrude","no-fuser","no-layer",
-                "png",
+                "png","fab=", "log=",
                 "slicer=","svg","units=",
                 "x-offset=","y-offset=","z-slice=","scale=",
                 "no-weave","overspray=",
@@ -192,6 +155,10 @@ def main(out = None, log = None):
             config['slicer'] = a
         elif o in ("--svg"):
             config['slicer'] = 'svg'
+        elif o in ("-f","--fab"):
+            fabtype = a
+        elif o in ("--log"):
+            logfile = a
         elif o in ("--x-offset"):
             config['x_shift_mm'] = float(a) * unit[units]
         elif o in ("--y-offset"):
@@ -255,7 +222,12 @@ def main(out = None, log = None):
     # Parse milti-layer SVG file
     svg = fab.SVGRender(xml = minidom.parse(svg_file))
 
-    printer = fab.brundle.Fab(output = out, log = log)
+    if logfile:
+        log = open(logfile, "w")
+    else:
+        log = None
+
+    printer = fabricator[fabtype].Fab(output = out, log = log)
 
     printer.prepare(svg = svg, name = args[0], config = config)
 
@@ -264,7 +236,8 @@ def main(out = None, log = None):
             surface = printer.surface(layer)
             surface.write_to_png("layer-%03d.png" % layer)
 
-        printer.layer(layer = layer)
+        print("Layer %d of %d" % (layer, printer.layers()), file=sys.stderr)
+        printer.render(layer = layer)
         pass
 
     printer.finish()

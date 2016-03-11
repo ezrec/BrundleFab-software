@@ -62,7 +62,11 @@ class Fab(object):
     def prepare(self, svg = None, name = None, config = None):
         self.config = config
         self.svg = svg
-        self.send(comment = "Prepare, job %s" % (name), code = None)
+
+        layers = self.layers()
+        z_mm = svg.z_mm(layers)
+
+        self.send(comment = "Prepare job '%s', %d layers, %.2fmm" % (name, layers, z_mm), code = None)
         pass
 
     # Render a layer

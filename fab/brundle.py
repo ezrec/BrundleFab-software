@@ -143,7 +143,7 @@ class Fab(fab.Fab):
         self.gc(None, "G0 Y0")
         pass
 
-    def layer(self, layer = 0):
+    def render(self, layer = 0):
         config = self.config
 
         z_delta_mm = self.svg.height_mm(layer)
