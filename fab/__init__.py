@@ -261,5 +261,12 @@ class SVGRender(object):
 
         return surface
 
+import fab.brundle
+import fab.posjet
+
+fabricator = {
+        'brundle': fab.brundle,
+        'posjet' : fab.posjet,
+        }
 
 #  vim: set shiftwidth=4 expandtab: # 

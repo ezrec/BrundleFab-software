@@ -35,15 +35,6 @@ import subprocess
 from xml.dom import minidom
 
 import fab
-import fab.brundle
-import fab.posjet
-import fab.tmc600
-
-fabricator = {
-        'brundle': fab.brundle,
-        'posjet' : fab.posjet,
-        'tmc600' : fab.tmc600,
-        }
 
 def usage():
     print("""
@@ -64,7 +55,7 @@ Transformation:
   --y-offset N          Add a Y offset (in mm) to the layers
 
 Output:
-  -f, --fab=SYSTEM      Fabrication system (bundle,posjet,tmc600)
+  -f, --fab=SYSTEM      Fabrication system (brundle, posjet)
 
 Debug:
   --log=LOGFILE         Annotated logfile of the emitted commands
@@ -227,7 +218,7 @@ def main(out = None, log = None):
     else:
         log = None
 
-    printer = fabricator[fabtype].Fab(output = out, log = log)
+    printer = fab.fabricator[fabtype].Fab(output = out, log = log)
 
     printer.prepare(svg = svg, name = args[0], config = config)
 
