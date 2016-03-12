@@ -277,10 +277,12 @@ class SVGRender(object):
 
 import fab.brundle
 import fab.posjet
+import fab.tmc600
 
 fabricator = {
         'brundle': fab.brundle,
         'posjet' : fab.posjet,
+        'tmc600' : fab.tmc600,
         }
 
 #  vim: set shiftwidth=4 expandtab: # 
