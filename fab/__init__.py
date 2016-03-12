@@ -31,9 +31,13 @@ import numpy
 
 # Convenience functions
 def in2mm(inch):
+    if inch is None:
+        return 0
     return inch * 25.4
 
 def mm2in(mm):
+    if mm is None:
+        return 0
     return mm / 25.4
 
 class Fab(object):
@@ -44,6 +48,10 @@ class Fab(object):
         self.output = output
         self.svg = None
         pass
+
+    # MUST OVERRIDE: Return the (x, y, z) mm dimenstions of the bed
+    def size_mm(self):
+        return (200.0, 200.0, 200.0)
 
     # Write something to the output
     def send(self, comment = None, code = None ):
@@ -62,6 +70,20 @@ class Fab(object):
     def prepare(self, svg = None, name = None, config = None):
         self.config = config
         self.svg = svg
+
+        size_mm = list(self.size_mm())
+        if 'x_bound_mm' in config:
+            size_mm[0] = min(config['x_bound_mm'], size_mm[0])
+        if 'y_bound_mm' in config:
+            size_mm[1] = min(config['y_bound_mm'], size_mm[1])
+        svg.size_mm(mm = size_mm)
+
+        shift_mm = [0] * 2
+        if 'x_shift_mm' in config:
+            shift_mm[0] = min(config['x_shift_mm'], size_mm[0])
+        if 'y_shift_mm' in config:
+            shift_mm[1] = min(config['y_shift_mm'], size_mm[1])
+        svg.offset_mm(mm = shift_mm)
 
         layers = self.layers()
         z_mm = svg.z_mm(layers)
@@ -87,20 +109,17 @@ class SVGRender(object):
     """ SVG Rendering helpers """
 
     def __init__(self, xml = None):
-        self.svg = xml
-        self.dot_h = 1000
-        self.dot_v = 1000
-        self.dpi_h = 300
-        self.dpi_v = 300
-        self.shift_h = 0
-        self.shift_v = 0
-        self.z = []
+        self._svg = xml
+        self._dpi = [300] * 2
+        self._size = [200] * 2
+        self._shift = [0] * 2
+        self._z = []
 
-        for layer in self.svg.getElementsByTagName("g"):
-            self.z.append((self._group_z(layer), layer, None))
+        for layer in self._svg.getElementsByTagName("g"):
+            self._z.append((self._group_z(layer), layer, None))
 
         # Sort by Z
-        self.z.sort()
+        self._z.sort()
         pass
 
     # Determine Z value of a layer of the SVG
@@ -118,80 +137,73 @@ class SVGRender(object):
         return z_mm
 
     def z_mm(self, layer = 0):
-        if layer >= len(self.z):
-            return self.z[len(self.z)-1][0]
+        if layer >= len(self._z):
+            return self._z[len(self._z)-1][0]
         else:
-            return self.z[layer][0]
+            return self._z[layer][0]
 
     def height_mm(self, layer = 0):
         z_mm = self.z_mm(layer)
         if layer == 0:
             height_mm = z_mm
         else:
-            height_mm = z_mm - self.z[layer-1][0]
+            height_mm = z_mm - self._z[layer-1][0]
         return height_mm
 
     # Return number of layers
     def layers(self):
-        return len(self.z)
+        return len(self._z)
 
     def _surface_cache_flush(self):
-        for z in self.z:
+        for z in self._z:
             z = (z[0], z[1], None)
             pass
         pass
 
-    # Returns the size, in dots
-    def size(self, dot_h = None, dot_v = None, mm_h = None, mm_v = None, in_h = None, in_v = None):
-        if in_h is not None:
-            self.dot_h = int(in_h * self.dpi_h)
-        if in_v is not None:
-            self.dot_v = int(in_v * self.dpi_v)
-        if mm_h is not None:
-            self.dot_h = int(mm2in(mm_h) * self.dpi_h)
-        if mm_v is not None:
-            self.dot_v = int(mm2in(mm_v) * self.dpi_v)
-        if dot_h is not None:
-            self.dot_h = dot_h
-        if dot_v is not None:
-            self.dot_v = dot_v
+    def _any2mm(self, ref = None, mm = None, inch = None):
+        if inch is not None:
+            mm = [ in2mm(x) for x in inch]
+            pass
 
-        self._surface_cache_flush()
-        return (self.dot_h, self.dot_v)
+        if mm is not None:
+            changed = False
+            for i in range(0, 2):
+                if mm[i] is not None and mm[i] > 0:
+                    ref[i] = mm[i]
+                    changed = True
+                    pass
+                pass
+            return changed
 
-    def offset(self, dot_h = None, dot_v = None, mm_h = None, mm_v = None, in_h = None, in_v = None):
-        if in_h is not None:
-            self.shift_h = int(in_h * self.dpi_h)
-        if in_v is not None:
-            self.shift_v = int(in_v * self.dpi_v)
-        if mm_h is not None:
-            self.shift_h = int(mm2in(mm_h) * self.dpi_h)
-        if mm_v is not None:
-            self.shift_v = int(mm2in(mm_v) * self.dpi_v)
-        if dot_h is not None:
-            self.shift_h = dot_h
-        if dot_v is not None:
-            self.shift_v = dot_v
+        return False
 
-        self._surface_cache_flush()
-        return (self.shift_h, self.shift_v)
+    # Return the size, in mm
+    def size_mm(self, mm = None, inch = None):
+        if self._any2mm(ref = self._size, mm = mm, inch = inch):
+            self._surface_cache_flush()
 
-    # Set up the resolution
-    def resolution(self, dpi = None, dpi_h = None, dpi_v = None):
-        if dpi is not None:
-            self.dpi_h = dpi
-            self.dpi_v = dpi
-        if dpi_h is not None:
-            self.dpi_h = dpi_h
-        if dpi_v is not None:
-            self.dpi_v = dpi_v
+        return tuple(self._size)
 
-        self._surface_cache_flush()
-        return (self.dpi_h, self.dpi_v)
+    # Return the size, in dots
+    def size(self):
+        return tuple([int(mm2in(self._size[i])*self._dpi[i]) for i in range(0,2)])
+
+    def offset_mm(self, mm = None, inch = None):
+        if self._any2mm(ref = self._shift, mm = mm, inch = inch):
+            self._surface_cache_flush()
+
+        return tuple(self._shift)
+
+    # Set up the resolution in dpi
+    def resolution(self, dpi = None):
+        if self._any2mm(ref = self._dpi, mm = dpi):
+            self._surface_cache_flush()
+
+        return tuple(self._dpi)
 
     def _draw_path(self, cr, poly):
-        x_shift = in2mm(self.shift_h/self.dpi_h)
-        y_shift = in2mm(self.shift_v/self.dpi_v)
+        x_shift = in2mm(self._shift[0]/self._dpi[0])
+        y_shift = in2mm(self._shift[1]/self._dpi[1])
         p = poly.getAttribute("points")
         p = re.sub(r'\s+',r' ', p)
         p = re.sub(r' *, *',r' ', p)
@@ -210,7 +222,7 @@ class SVGRender(object):
     # Return the (float(z_mm), float(height_mm), cairo.ImageSurface(surface))
     # of a layer
     def surface(self, layer = 0):
-        z_mm, svg, surface = self.z[layer]
+        z_mm, svg, surface = self._z[layer]
 
         if surface is not None:
             return surface
@@ -218,7 +230,9 @@ class SVGRender(object):
         height_mm = self.height_mm(layer)
 
         # Create a new cairo surface
-        surface = cairo.ImageSurface(cairo.FORMAT_A8, self.dot_h, self.dot_v)
+        dot = self.size()
+
+        surface = cairo.ImageSurface(cairo.FORMAT_A8, dot[0], dot[1])
         cr = cairo.Context(surface)
         cr.set_antialias(cairo.ANTIALIAS_NONE)
 
@@ -240,7 +254,7 @@ class SVGRender(object):
                     holes.append(poly)
 
         # Scale from mm to dots
-        cr.scale(mm2in(1.0) * self.dpi_h, mm2in(1.0) * self.dpi_v)
+        cr.scale(mm2in(1.0) * self._dpi[0], mm2in(1.0) * self._dpi[1])
 
         # Draw filled area
         for contour in contours:
@@ -257,7 +271,7 @@ class SVGRender(object):
         surface.flush()
 
         # Update the layer info
-        self.z[layer] = (z_mm, svg, surface)
+        self._z[layer] = (z_mm, svg, surface)
 
         return surface
 

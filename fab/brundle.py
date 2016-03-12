@@ -29,6 +29,10 @@ import fab
 
 from fab import in2mm, mm2in
 
+BED_X = 150
+BED_Y = 200
+BED_Z = 150
+
 X_BIN_FEED=0        # Start of the feed bin
 X_BIN_PART=198      # Start of the part bin
 X_BIN_WASTE=385     # Start of the waste bin
@@ -51,6 +55,9 @@ Y_DPI=96.0
 Y_DOTS=12
 
 class Fab(fab.Fab):
+    def size(self):
+        return (BED_X, BED_Y, BED_Z)
+
     def gc(self, comment, code = None):
         if code is not None:
             code = code.encode() + b"\n"
@@ -58,15 +65,14 @@ class Fab(fab.Fab):
         pass
 
     def prepare(self, svg = None, name = "Unknown", config = {}):
-        self.config = config
-        self.svg = svg
+        super(Fab, self).prepare(svg = svg, name = name, config = config)
 
         layers = svg.layers()
         max_z_mm = svg.z_mm(layers)
 
-        svg.resolution(dpi_h = X_DPI, dpi_v = Y_DPI)
-        self.w_dots, self.h_dots = svg.size(mm_h = config['x_bound_mm'], mm_v = config['y_bound_mm'])
-        svg.offset(mm_h = config['x_shift_mm'], mm_v = config['y_shift_mm'])
+        svg.resolution(dpi = (X_DPI, Y_DPI))
+
+        self.w_dots, self.h_dots = svg.size()
 
         self.gc("Print %s to the BrundleFab, %dmm, %d layers" % (name, max_z_mm, layers))
         self.gc("Units are mm", "G21")

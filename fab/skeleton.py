@@ -29,6 +29,9 @@ import struct
 FEED_RETRACT = 2.0 # mm
 
 class Fab(fab.Fab):
+    def size_mm(self):
+        return (200.0, 200.0, 200.0)
+
     def prepare(self, svg = None, name = None, config = None):
         super(Fab, self).prepare(svg = svg, name = name, config = config)
 
@@ -63,5 +66,9 @@ class Fab(fab.Fab):
             pass
         pass
 
+    # Perform any end-of-day processing here
+    def finish(self):
+        self.send("Eject part")
+        pass
 
 #  vim: set shiftwidth=4 expandtab: # 

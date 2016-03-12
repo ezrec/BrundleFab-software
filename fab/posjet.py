@@ -28,8 +28,17 @@ import numpy
 import struct
 
 FEED_RETRACT = 2.0 # mm
+BED_X = 65.0 # mm
+BED_Y = 65.0 # mm
+BED_Z = 65.0 # mm
+
+X_DPI = 96.0
+Y_DPI = 96.0
 
 class Fab(fab.Fab):
+    def size(self):
+        return (BED_X, BED_Y, BED_Z)
+
     def send(self, comment, code = None):
         super(Fab, self).send(code = code)
         log = self.log
@@ -53,6 +62,8 @@ class Fab(fab.Fab):
 
     def prepare(self, svg = None, name = None, config = None):
         super(Fab, self).prepare(svg = svg, name = name, config = config)
+
+        self.svg.resolution(dpi = (X_DPI, Y_DPI))
 
         self.send("Cancel any pending operations", b'\022');
         self.send("Initialize printer", b'\033@');
