@@ -182,8 +182,9 @@ def main(out = None, log = None):
         slicer_args = ["slic3r",
                             "--export-svg",
                             "--output", temp_svg.name,
+                            "--first-layer-height", str(config['z_slice_mm']),
                             "--layer-height", str(config['z_slice_mm']),
-                            "--nozzle-diameter", str(config['z_slice_mm'] * 1.1),
+                            "--nozzle-diameter", str(config['z_slice_mm']),
                             "--scale", str(config['scale']),
                             args[0]]
     elif config['slicer'] == "repsnapper":
