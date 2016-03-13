@@ -35,12 +35,18 @@ import datetime
 import fab
 
 DPI_X = 360
-DPI_Y = 360
+DPI_Y = 180
 FEED_RETRACT = 2.0 # mm
 
-BED_X = 40.0
-BED_Y = 40.0
+BED_X = 47.5
+BED_Y = 80.0
 BED_Z = 40.0
+
+BED_X_MARGIN_LEFT = 0.0 # mm 
+BED_X_MARGIN_RIGHT = 1.0 # mm 
+
+BED_Y_MARGIN_TOP = 5.0 # mm
+BED_Y_MARGIN_BOTTOM = 10.0 # mm
 
 class Fab(fab.Fab):
 
@@ -66,6 +72,9 @@ class Fab(fab.Fab):
         pass
 
     def prepare(self, svg = None, name = None, config = None):
+        # Accomodate the 5mm hardware left margin
+        config['x_shift_mm'] += 5.0
+
         super(Fab, self).prepare(svg = svg, name = name, config = config)
 
         # Do any start-of-day initialization here
@@ -78,24 +87,26 @@ class Fab(fab.Fab):
         now = datetime.datetime.today()
         self.send_remote1(b'TI', struct.pack(">HBBBBB", now.year, now.month, now.day, now.hour, now.minute, now.second))
         self.send_remote1(b'JS', b'\000\000\000')
-        self.send_remote1(b'JH', struct.pack(">BL", 1, 0x1f000000) + b'\x32\x02\x86\x08\x00\x61')
+        job_id = 1234
+        self.send_remote1(b'JH', struct.pack(">BL", 1, job_id) + b'\x34\x02\x86\x08\x00\x61')
         self.send_esc(b'\000', b'\000\000')
 
         self.send_escp(b'd', b'\000' * 32767)
         self.send_escp(b'd', b'\000' * 32767)
+        self.send("Leave packet mode", b'\000\000\000')
         self.send_esc(b'\001', b'@EJL 1284.4\n@EJL     \n')
 
 
         self.send_escp(b'R', b'\000REMOTE1')
         self.send_remote1(b'EX', struct.pack(">LB", 5, 0)) # ???
-        self.send_remote1(b'AC', b'\x00') # ???
+        self.send_remote1(b'AC', b'\x01') # Enable auto-cutter
         self.send_esc(b'\000', b'\000\000')
 
         # Enable graphics mode
         self.send_escp(b'G', b'\001')
 
         # Set resolution
-        svg.resolution(dpi = (DPI_X/2, DPI_Y/4))
+        svg.resolution(dpi = (DPI_X, DPI_Y))
         dots_h, dots_v = svg.size()
         unit = 1440
         page = unit / DPI_Y
@@ -103,12 +114,50 @@ class Fab(fab.Fab):
         horizontal = unit / DPI_X
         self.send_escp(b'U', struct.pack("<BBBH", page, vertical, horizontal, unit))
 
+        self.margin_left = int(fab.mm2in(BED_X_MARGIN_LEFT) * DPI_X)
+        self.margin_right = int(fab.mm2in(BED_X_MARGIN_RIGHT) * DPI_X)
+        self.margin_top = int(fab.mm2in(BED_Y_MARGIN_TOP) * DPI_Y)
+        self.margin_bottom = int(fab.mm2in(BED_Y_MARGIN_BOTTOM) * DPI_Y)
+
         # Set paper loading/ejection
-        self.send_esc(b'\x19', struct.pack("<B", 1))
+        self.send_esc(b'\x19', b'1')
         # Set page length
-        self.send_escp(b'C', struct.pack("<L", dots_v))
+        self.send_escp(b'C', struct.pack("<L", self.margin_top + dots_v + self.margin_bottom))
         # Set page top & bottom
-        self.send_escp(b'c', struct.pack("<LL", 0, dots_v))
+        self.send_escp(b'c', struct.pack("<LL", self.margin_top, self.margin_top + dots_v))
+        pass
+
+    def _render_lines(self, raster = None, microweave = False):
+        lines = len(raster)
+        bwidth = len(raster[0])
+
+        if lines == 0:
+            return
+
+        if microweave:
+            bitmap = bytearray([]).join([raster[i] for i in range(0, lines, 2)])
+            weaved = bytearray([]).join([raster[i] for i in range(1, lines, 2)])
+            lines //= 2
+        else:
+            bitmap = bytearray([]).join(raster)
+
+        cmode = 0
+        bpp = 2 # 2 bits/pixel
+
+        for color in [2, 1, 4]:
+            cmd = struct.pack("<BBBHH", color, cmode, bpp, bwidth, lines )
+            if self.margin_left > 0:
+                self.send_escp(b'$', struct.pack("<L", self.margin_left))
+
+            self.send_esc(b'i', cmd + bitmap)
+
+            if microweave:
+                self.send_escp(b'$', struct.pack("<L", self.margin_left))
+                cmd = struct.pack("<BBBHH", color | 0x40, cmode, bpp, bwidth, lines )
+                self.send_esc(b'i', cmd + weaved)
+
+            self.send(code = b'\r')
+            pass
         pass
 
     def render(self, layer = 0):
@@ -130,7 +179,6 @@ class Fab(fab.Fab):
             self.send("5. Move pen to start of the part bin")
             self.send("6. Ink the layer")
 
-            print("svg.size", self.svg.size(), file = sys.stderr)
             surface = self.svg.surface(layer)
             stride = surface.get_stride()
             image = numpy.frombuffer(surface.get_data(), dtype=numpy.uint8)
@@ -140,29 +188,25 @@ class Fab(fab.Fab):
             image = numpy.repeat(image, 2, axis=-1)
             image = numpy.packbits(image, axis=-1)
 
-            # Set veritical offset
-            self.send_escp(b'v', struct.pack("<L", 0))
-            # Render the lines...
-            bwidth = len(image[0])
-            cmode = 0  # Uncompressed
-            bpp = 2 # 2 bits/pixel
-            lines = 90
-            for y in range(0, v_dots//lines):
-                # .. in groups of 90
-                raster = [bytearray(image[y*lines + l]) for l in range(0, lines)]
-                raster = bytearray([]).join(raster)
-                for color in [2, 1, 4]:
-                    cmd = struct.pack("<BBBHH", color, cmode, bpp, bwidth, lines )
-                    self.send_esc(b'i', cmd + raster)
-                    self.send_escp(b'$', struct.pack("<L", 0))
-                    cmd = struct.pack("<BBBHH", color | 0x40, cmode, bpp, bwidth, lines )
-                    self.send_esc(b'i', cmd + raster)
-                    self.send(code = b'\r')
-                    pass
-                self.send_escp(b'v', struct.pack("<L", DPI_Y))
-                pass
-            self.send(code = b'\x0c')
+            # Got to the top margin
+            self.send_escp(b'v', struct.pack("<L", self.margin_top))
 
+            # Render the lines...
+            lines = 180
+            last_y = 0
+            for y in range(0, v_dots//lines):
+                # .. in groups of 180
+                if y > 0:
+                    self.send_escp(b'v', struct.pack("<L", lines))
+                raster = [bytearray(image[y*lines + l]) for l in range(0, lines)]
+
+                self._render_lines(raster, microweave = True)
+                last_y = y*(lines + 1)
+                pass
+
+            lines = v_dots - last_y
+            raster = [bytearray(image[last_y]) for l in range(0, lines)]
+            self.send(code = b'\x0c')
             pass
 
         self.send("7. Retract recoating blade to start of the Feed Bin")
